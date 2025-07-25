@@ -12,6 +12,9 @@ RUN apk --update upgrade && \
     mvn -B package 
 FROM eclipse-temurin:22-jre-alpine
 
+LABEL maintainer="cmahnke@gmail.com"
+LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"
+
 WORKDIR /app
 
 COPY --from=builder /app/cli/target/fliiifenleger-cli.jar .

@@ -20,6 +20,6 @@ updates:
     schedule:
       interval: "daily"
     groups:
-      github-actions:
+      java:
         patterns:
         - '*'
