@@ -144,9 +144,9 @@ public class Tiler {
         for (ImageInfo.Size size : imageInfo.getSizes()) {
             futures.add(executor.submit(() -> {
                 try {
-                    BufferedImage scaledImage = imageInfo.getImage().crop(0, 0, imageInfo.getImage().getWidth(), imageInfo.getImage().getHeight(), (double) imageInfo.getImage().getWidth() / size.getWidth());
+                    BufferedImage scaledImage = imageInfo.getImage().crop(0, 0, imageInfo.getImage().getWidth(), imageInfo.getImage().getHeight(), (double) imageInfo.getImage().getWidth() / size.width());
 
-                    String sizeStr = (version == ImageInfo.IIIFVersion.V3) ? String.format("%d,%d", size.getWidth(), size.getHeight()) : String.format("%d,", size.getWidth());
+                    String sizeStr = (version == ImageInfo.IIIFVersion.V3) ? String.format("%d,%d", size.width(), size.height()) : String.format("%d,", size.width());
 
                     Path outputPath = imageDir.resolve(String.format("full/%s/0/default.%s", sizeStr, sink.getFormatExtension()));
                     Files.createDirectories(outputPath.getParent());
@@ -155,7 +155,7 @@ public class Tiler {
                         sink.saveTile(os, scaledImage, imageInfo.getImage().getMetadata());
                     }
 
-                    if (size.getWidth() == imageInfo.getImage().getWidth() && size.getHeight() == imageInfo.getImage().getHeight()) {
+                    if (size.width() == imageInfo.getImage().getWidth() && size.height() == imageInfo.getImage().getHeight()) {
                         String fullSizeStr = (version == ImageInfo.IIIFVersion.V3) ? "max" : "full";
                         Path fullOutputPath = imageDir.resolve(String.format("full/%s/0/default.%s", fullSizeStr, sink.getFormatExtension()));
                         Files.createDirectories(fullOutputPath.getParent());

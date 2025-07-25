@@ -1,10 +1,10 @@
 package de.christianmahnke.iiif.fliiifenleger.cli;
 
+import ch.qos.logback.classic.Level;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.TilerException;
 import de.christianmahnke.iiif.fliiifenleger.debug.IiifImageReassembler;
-import ch.qos.logback.classic.Level;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.slf4j.Logger;
@@ -19,8 +19,8 @@ import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 

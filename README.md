@@ -17,15 +17,6 @@
   - `validate`
   - `info`
 
-## Features
-
-*   **IIIF Tile Generation**: Creates a full static IIIF tile tree from source images.
-*   **IIIF Endpoint Validation**: Reassembles and saves an image from a remote IIIF endpoint to verify its integrity.
-*   **Extensible Architecture**: Supports custom `ImageSource` and `TileSink` implementations for different image formats and storage backends.
-*   **Multiple IIIF Versions**: Supports generating `info.json` for both IIIF Image API v2 and v3.
-*   **Parallel Processing**: Generates tiles for multiple images in parallel for improved performance.
-*   **Configurable Logging**: Adjustable log levels for debugging.
-
 ## Architecture
 
 The project is a multi-module Maven project with a `core` and a `cli` module.
@@ -47,6 +38,13 @@ The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic
 
 *   Java JDK 9 or newer
 *   Apache Maven 3.x
+
+### Optional Software
+
+*   **libjxl**: To enable support for JPEG XL (`.jxl`) images, the native `libjxl` library must be installed on your system. This is required for the `JxlImageSource` to function correctly.
+    *   On Debian/Ubuntu: `sudo apt-get install libjxl-dev` or `sudo apt-get install libjxl-tools`
+    *   On Alpine Linux: `apk add libjxl`
+    *   On macOS (with Homebrew): `brew install jpeg-xl`
 
 ## Building from Source
 

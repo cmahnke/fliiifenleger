@@ -97,7 +97,7 @@ public class ImageInfo {
             json.put("tiles", tiles);
 
             json.put("sizes", getSizes().stream()
-                    .map(s -> Map.of("width", s.getWidth(), "height", s.getHeight()))
+                    .map(s -> Map.of("width", s.width(), "height", s.height()))
                     .collect(Collectors.toList()));
 
         } else { // V2
@@ -117,37 +117,22 @@ public class ImageInfo {
             json.put("tiles", tiles);
 
             json.put("sizes", getSizes().stream()
-                    .map(s -> Map.of("width", s.getWidth(), "height", s.getHeight()))
+                    .map(s -> Map.of("width", s.width(), "height", s.height()))
                     .collect(Collectors.toList()));
         }
         return json;
     }
 
-    public static class Size {
-        private final int width;
-        private final int height;
-
-        public Size(int width, int height) {
-            this.width = width;
-            this.height = height;
-        }
-
-        public int getWidth() {
-            return width;
-        }
-
-        public int getHeight() {
-            return height;
-        }
+    public record Size(int width, int height) {
 
         @Override
-        public String toString() {
-            return "Size{" +
-                    "width=" + width +
-                    ", height=" + height +
-                    '}';
+            public String toString() {
+                return "Size{" +
+                        "width=" + width +
+                        ", height=" + height +
+                        '}';
+            }
         }
-    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private static class Tile {
