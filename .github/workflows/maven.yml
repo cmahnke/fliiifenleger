@@ -32,8 +32,15 @@ jobs:
       - name: Install JXL library
         run: |
           sudo apt-get update
-          sudo apt-get install -y libjxl-dev
-          find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
+          sudo apt-get install -y libstdc++6 libtcmalloc-minimal4 libgcc-s1 libc6 libilmbase25 libopenexr25 libhwy0 libhwy-dev libpng16-16 libbrotli1 libjpeg8 libgif7
+
+          wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+          tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+
+          sudo apt install -y -f ./libjxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./jxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./libjxl-dev_0.11.1_amd64.deb
+          #find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
       - name: Build with Maven
         run: mvn -B package --file pom.xml
 
