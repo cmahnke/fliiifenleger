@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    assignees:
+      - cmahnke
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      github-actions:
+        patterns:
+        - '*'
+  - package-ecosystem: "maven"
+    assignees:
+      - cmahnke
+    directories: 
+      - "/"
+      - "core/"
+      - "cli/"
+    schedule:
+      interval: "daily"
+    groups:
+      github-actions:
+        patterns:
+        - '*'
