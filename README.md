@@ -1,5 +1,7 @@
 # Fliiifenleger
 
+![Logo](./Fliiifenleger.svg)
+
 `fliiifenleger` is a Java-based command-line tool for generating and validating static IIIF (International Image Interoperability Framework) images. It can process local image files, create IIIF-compliant tile structures, and validate existing IIIF endpoints.
 
 ## Table of Contents
