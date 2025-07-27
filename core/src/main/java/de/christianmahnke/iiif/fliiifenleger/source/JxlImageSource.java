@@ -1,6 +1,22 @@
-package de.christianmahnke.iiif.fliiifenleger.source;
+/**
+ * Fliiifenleger
+ * Copyright (C) 2025  Christian Mahnke
+ * <p>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
-import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
+package de.christianmahnke.iiif.fliiifenleger.source;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -15,44 +31,11 @@ import java.util.Map;
 import com.google.auto.service.AutoService;
 import lombok.NoArgsConstructor;
 
-@NoArgsConstructor(force = true)
+@NoArgsConstructor
 @AutoService(ImageSource.class)
 public class JxlImageSource extends AbstractImageSource implements ImageSource {
-    private final BufferedImage image;
-    private final URL url;
+    private BufferedImage image;
     private static final String NAME = "jxl";
-
-    public JxlImageSource(URL url) throws ImageSourceException {
-        try {
-            this.url = url;
-            BufferedImage loadedImage = ImageIO.read(AbstractImageSource.getInputStream(this.url));
-            if (loadedImage == null) {
-                throw new ImageSourceException("Could not read JXL image file (is the imageio-jxl plugin on the classpath?): " + url);
-            }
-            this.image = removeAlphaChannelIfPresent(loadedImage);
-        } catch (MalformedURLException e) {
-            throw new ImageSourceException("Could not create URL from path: " +url, e);
-        } catch (IOException e) {
-            throw new ImageSourceException("Could not read image from path: " + url, e);
-        } catch (Exception e) {
-            throw new ImageSourceException("Could not read JXL image from path: " + url, e);
-        }
-    }
-
-    private BufferedImage removeAlphaChannelIfPresent(BufferedImage original) {
-        if (!original.getColorModel().hasAlpha()) {
-            return original;
-        }
-
-        BufferedImage newImage = new BufferedImage(original.getWidth(), original.getHeight(), BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = newImage.createGraphics();
-        try {
-            g.drawImage(original, 0, 0, null);
-        } finally {
-            g.dispose();
-        }
-        return newImage;
-    }
 
     @Override
     public BufferedImage getImage() {
@@ -60,8 +43,9 @@ public class JxlImageSource extends AbstractImageSource implements ImageSource {
     }
 
     @Override
-    public URL getUrl() {
-        return url;
+    public void load(URL url)throws ImageSourceException{
+        this.url = url;
+        loadImage();
     }
 
     @Override
@@ -74,8 +58,30 @@ public class JxlImageSource extends AbstractImageSource implements ImageSource {
         return image.getHeight();
     }
 
+     private void loadImage() throws ImageSourceException  {
+        if (this.url == null){
+            throw new IllegalStateException("URL has not been set for JxlImageSource.");
+        }
+        try {
+            BufferedImage loadedImage = ImageIO.read(AbstractImageSource.getInputStream(this.url));
+            if (loadedImage == null) {
+                throw new ImageSourceException("Could not read JXL image file (is the imageio-jxl plugin on the classpath?): " + url);
+            }
+            this.image = loadedImage;
+        } catch (MalformedURLException e) {
+            throw new ImageSourceException("Could not create URL from path: " +url, e);
+        } catch (IOException e) {
+            throw new ImageSourceException("Could not read image from path: " + url, e);
+        } catch (Exception e) {
+            throw new ImageSourceException("Could not read JXL image from path: " + url, e);
+        }
+
+    }
+
     @Override
     public BufferedImage crop(int x, int y, int width, int height, double scale) throws ImageSourceException {
+        getImage();
+        if (image == null) loadImage();
         BufferedImage cropped;
         try {
             cropped = image.getSubimage(x, y, width, height);

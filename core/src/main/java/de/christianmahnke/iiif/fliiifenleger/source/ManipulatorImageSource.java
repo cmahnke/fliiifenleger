@@ -16,18 +16,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package de.christianmahnke.iiif.fliiifenleger;
+package de.christianmahnke.iiif.fliiifenleger.source;
 
-public class TilerException extends Exception {
-    public TilerException(String message) {
-        super(message);
-    }
+public interface ManipulatorImageSource extends  ImageSource {
 
-    public TilerException(Exception cause) {
-        super(cause);
-    }
+    public void load(ImageSource baseSource);
 
-        public TilerException(String message, Exception cause) {
-        super(message,cause);
-    }
 }
+

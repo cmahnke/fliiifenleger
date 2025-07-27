@@ -1,3 +1,21 @@
+/**
+ * Fliiifenleger
+ * Copyright (C) 2025  Christian Mahnke
+ * <p>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package de.christianmahnke.iiif.fliiifenleger.cli;
 
 import ch.qos.logback.classic.Level;
@@ -61,7 +79,7 @@ public class Main implements Runnable {
         @Option(names = {"-z", "--zoom-levels"}, description = "Set the number of zoom levels. Set to 0 to auto-calculate.", defaultValue = "0")
         private int zoomLevels;
 
-        @Option(names = {"-t", "--tile-size"}, description = "Set the tile size.", defaultValue = Tiler.DEFAULT_TILE_SIZE+"")
+        @Option(names = {"-t", "--tile-size"}, description = "Set the tile size.", defaultValue = Tiler.DEFAULT_TILE_SIZE + "")
         private int tileSize;
 
         @Option(names = {"-o", "--output"}, description = "Directory where the IIIF images are generated.", defaultValue = "iiif")
@@ -115,19 +133,29 @@ public class Main implements Runnable {
                         }
                     }
 
-                    ImageSource imageSource = Tiler.SOURCE_REGISTRY.get(sourceName);
-                    if (imageSource == null) {
+                    ImageSource sourceTemplate = Tiler.SOURCE_REGISTRY.get(sourceName);
+                    if (sourceTemplate == null) {
                         throw new TilerException("Unknown image source: '" + sourceName + "'");
                     }
+
+                    // Create a new instance for each file
+                    ImageSource imageSource = sourceTemplate.getClass().getConstructor().newInstance();
+
+                    // Set the URL to trigger image loading
+                    imageSource.load(file.toURI().toURL());
 
                     if (sourceOptions != null) {
                         imageSource.setOptions(sourceOptions);
                     }
 
-                    TileSink tileSink = Tiler.SINK_REGISTRY.get(sink);
-                    if (tileSink == null) {
+                    TileSink sinkTemplate = Tiler.SINK_REGISTRY.get(sink);
+                    if (sinkTemplate == null) {
                         throw new TilerException("Unknown image sink: '" + sink + "'");
                     }
+
+                    // Create a new instance for each sink operation
+                    TileSink tileSink = sinkTemplate.getClass().getConstructor().newInstance();
+
                     if (sinkOptions != null) {
                         tileSink.setOptions(sinkOptions);
                     }
@@ -138,7 +166,8 @@ public class Main implements Runnable {
                             List.of(file.toPath()),
                             output,
                             identifier,
-                            zoomLevels
+                            zoomLevels,
+                            tileSink
                     );
                 } catch (Exception e) {
                     // In a real parallel stream, you'd want a better way to collect errors.

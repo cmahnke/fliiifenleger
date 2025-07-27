@@ -1,3 +1,21 @@
+/**
+ * Fliiifenleger
+ * Copyright (C) 2025  Christian Mahnke
+ * <p>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package de.christianmahnke.iiif.fliiifenleger.source;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +51,9 @@ public class JxlImageSourceTest {
 
     @Test
     public void constructor_shouldLoadImageSuccessfully() throws ImageSourceException {
-        JxlImageSource source = new JxlImageSource(validJxlUrl);
+        JxlImageSource source = new JxlImageSource();
+        source.load(validJxlUrl);
+        source.getImage(); // Trigger loading
         assertNotNull(source.getImage(), "Image should not be null");
         assertEquals(validJxlUrl, source.getUrl(), "URL should match");
         assertTrue(source.getWidth() > 0, "Width should be greater than 0");
@@ -42,18 +62,25 @@ public class JxlImageSourceTest {
 
     @Test
     public void constructor_shouldThrowExceptionForNonExistentImage() throws ImageSourceException {
-        assertThrows(ImageSourceException.class, () -> new JxlImageSource(nonExistentJxlUrl));
+        JxlImageSource source = new JxlImageSource();
+        assertThrows(ImageSourceException.class, () -> {
+            source.load(nonExistentJxlUrl);
+        });
     }
 
     @Test
     public void getName_shouldReturnJxl() throws ImageSourceException {
-        JxlImageSource source = new JxlImageSource(validJxlUrl);
+        JxlImageSource source = new JxlImageSource();
+        source.load(validJxlUrl);
+        source.getImage(); // Trigger loading
         assertEquals("jxl", source.getName(), "Name should be 'jxl'");
     }
 
     @Test
     public void crop_shouldCropAndScale() throws ImageSourceException {
-        JxlImageSource source = new JxlImageSource(validJxlUrl);
+        JxlImageSource source = new JxlImageSource();
+        source.load(validJxlUrl);
+        source.getImage(); // Trigger loading
         int x = 0, y = 0, width = 50, height = 50;
         double scale = 2.0;
 
@@ -69,7 +96,9 @@ public class JxlImageSourceTest {
 
     @Test
     public void getMetadata_shouldReturnJxlDecoderInfo() throws ImageSourceException {
-        JxlImageSource source = new JxlImageSource(validJxlUrl);
+        JxlImageSource source = new JxlImageSource();
+        source.load(validJxlUrl);
+        source.getImage(); // Trigger loading
         Map<String, Object> metadata = source.getMetadata();
 
         assertNotNull(metadata);

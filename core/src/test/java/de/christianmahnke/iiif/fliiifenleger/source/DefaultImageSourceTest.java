@@ -1,3 +1,21 @@
+/**
+ * Fliiifenleger
+ * Copyright (C) 2025  Christian Mahnke
+ * <p>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package de.christianmahnke.iiif.fliiifenleger.source;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,8 +45,9 @@ public class DefaultImageSourceTest {
     }
 
     @Test
-    public void constructor_shouldLoadImageSuccessfully() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void constructor_shouldLoadImageSuccessfully() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         assertNotNull(source.getImage(), "Image should not be null");
         assertEquals(validImageUrl, source.getUrl(), "URL should match");
         assertEquals(4615, source.getWidth(), "Width should be correct");
@@ -37,18 +56,33 @@ public class DefaultImageSourceTest {
 
     @Test
     public void constructor_shouldThrowExceptionForNonExistentImage() {
-        assertThrows(ImageSourceException.class, () -> new DefaultImageSource(nonExistentImageUrl));
+        DefaultImageSource source = new DefaultImageSource();
+        // The exception is thrown during image loading, which is triggered by getImage() or crop()
+        assertThrows(ImageSourceException.class, () -> {
+            source.load(nonExistentImageUrl);
+        });
     }
 
     @Test
-    public void getName_shouldReturnDefault() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void setUrl_shouldLoadImage() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
+        source.getImage(); // Trigger loading
+        assertNotNull(source.getImage(), "Image should be loaded after setUrl");
+        assertEquals(4615, source.getWidth(), "Width should be correct after setUrl");
+    }
+
+    @Test
+    public void getName_shouldReturnDefault() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         assertEquals("default", source.getName(), "Name should be 'default'");
     }
 
     @Test
-    public void crop_shouldCropWithoutScaling() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void crop_shouldCropWithoutScaling() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         int x = 10, y = 20, width = 100, height = 150;
 
         BufferedImage cropped = source.crop(x, y, width, height, 1.0);
@@ -59,8 +93,9 @@ public class DefaultImageSourceTest {
     }
 
     @Test
-    public void crop_shouldCropAndScale() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void crop_shouldCropAndScale() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         int x = 10, y = 20, width = 100, height = 150;
         double scale = 2.0;
 
@@ -72,16 +107,18 @@ public class DefaultImageSourceTest {
     }
 
     @Test
-    public void crop_shouldThrowExceptionForInvalidRegion() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void crop_shouldThrowExceptionForInvalidRegion() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         // Crop region is outside the image bounds
         assertThrows(ImageSourceException.class, () ->
                 source.crop(0, 0, source.getWidth() + 1, source.getHeight() + 1, 1.0));
     }
 
     @Test
-    public void getMetadata_shouldReturnNonEmptyMapForJpg() throws ImageSourceException {
-        DefaultImageSource source = new DefaultImageSource(validImageUrl);
+    public void getMetadata_shouldReturnNonEmptyMapForJpg() throws Exception {
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(validImageUrl);
         Map<String, Object> metadata = source.getMetadata();
 
         assertNotNull(metadata);
@@ -97,7 +134,8 @@ public class DefaultImageSourceTest {
         javax.imageio.ImageIO.write(blankImage, "jpg", tempFile);
         tempFile.deleteOnExit();
 
-        DefaultImageSource source = new DefaultImageSource(tempFile.toURI().toURL());
+        DefaultImageSource source = new DefaultImageSource();
+        source.load(tempFile.toURI().toURL());
         Map<String, Object> metadata = source.getMetadata();
 
         assertNotNull(metadata);

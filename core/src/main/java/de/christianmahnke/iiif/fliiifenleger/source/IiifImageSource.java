@@ -1,3 +1,21 @@
+/**
+ * Fliiifenleger
+ * Copyright (C) 2025  Christian Mahnke
+ * <p>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package de.christianmahnke.iiif.fliiifenleger.source;
 
 import com.google.auto.service.AutoService;
@@ -27,12 +45,11 @@ import java.util.Map;
 import java.io.Reader;
 
 @AutoService(ImageSource.class)
-@NoArgsConstructor(force = true)
+@NoArgsConstructor
 public class IiifImageSource extends AbstractImageSource implements ImageSource {
     private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String NAME = "iiif";
 
-    private URL infoJsonUrl;
     private URI imageBaseUri;
     private int width;
     private int height;
@@ -40,18 +57,24 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
     private int apiLevel = -1; // -1: unknown, 0: level 0, etc.
     private ImageInfo.IIIFVersion apiVersion;
 
-    public IiifImageSource(URL url) throws ImageSourceException {
-        this.infoJsonUrl = url;
-        try {
+    @Override
+    public void load(URL url)throws ImageSourceException{
+        this.url = url;
+        loadImage();
+    }
+
+    private void loadImage()throws ImageSourceException  {
+try {
             loadInfoJson();
-        } catch (IOException | URISyntaxException e) {
-            throw new ImageSourceException("Failed to load or parse info.json from " + url, e);
+        } catch (IOException | URISyntaxException | ImageSourceException e) {
+            // Wrap in a runtime exception because the interface doesn't allow throwing checked exceptions here.
+            throw new ImageSourceException("Failed to load info.json from URL: " + url, e);
         }
     }
 
     private void loadInfoJson() throws IOException, URISyntaxException, ImageSourceException {
-        log.debug("Fetching info.json from: {}", infoJsonUrl);
-        try (InputStream is = getInputStream(infoJsonUrl);
+        log.debug("Fetching info.json from: {}", url);
+        try (InputStream is = getInputStream(url);
             Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8);
             JsonReader jsonReader = Json.createReader(reader)) {
             this.infoJson = jsonReader.readObject();
@@ -75,14 +98,14 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
                 String profileStr = this.infoJson.get("profile").toString();
                 if (profileStr.contains("level0")) {
                     this.apiLevel = 0;
-                    log.info("Detected IIIF API Level 0 compliance for {}. Cropping will be done in-memory.", this.infoJsonUrl);
+                    log.info("Detected IIIF API Level 0 compliance for {}. Cropping will be done in-memory.", this.url);
                 } else if (profileStr.contains("level1")) {
                     this.apiLevel = 1;
                 } else if (profileStr.contains("level2")) {
                     this.apiLevel = 2;
                 }
             } else {
-                log.info("No profaile detected in {}.", this.infoJsonUrl);
+                log.info("No profaile detected in {}.", this.url);
             }
         }
     }
@@ -93,25 +116,19 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
     }
 
     @Override
-    public BufferedImage getImage() throws ImageSourceException {
-        // This will fetch the full, unscaled image. This can be memory-intensive.
-        // The crop method is generally preferred for efficiency.
-        return crop(0, 0, width, height, 1.0);
-    }
-
-    @Override
-    public URL getUrl() {
-        return infoJsonUrl;
-    }
-
-    @Override
     public int getWidth() {
+        if (infoJson == null) {
+            throw new IllegalStateException("IIIF Image Source not initialized. Call setUrl() first.");
+        }
         return width;
     }
 
     @Override
     public int getHeight() {
         return height;
+    }
+    private void ensureInitialized() {
+        if (this.imageBaseUri == null) throw new IllegalStateException("IIIF Image Source not initialized. Call setUrl() first.");
     }
 
     @Override
@@ -190,7 +207,7 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
             g.dispose();
             return scaled;
         } catch (Exception e) {
-            throw new ImageSourceException("Failed to perform in-memory crop for IIIF source: " + this.infoJsonUrl, e);
+            throw new ImageSourceException("Failed to perform in-memory crop for IIIF source: " + this.url, e);
         }
     }
 

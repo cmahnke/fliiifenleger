@@ -6,8 +6,7 @@ import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -22,7 +21,7 @@ public class DefaultTileSink extends AbstractTileSink {
     public void saveTile(OutputStream outputStream, BufferedImage image, Map<String, Object> metadata) throws TileSinkException {
         BufferedImage imageToSave;
         // Handle transparency for formats that don't support it (like JPEG)
-        if (image.getTransparency() != BufferedImage.TRANSLUCENT || "png".equalsIgnoreCase(this.format)) {
+        if (image.getTransparency() != Transparency.TRANSLUCENT || "png".equalsIgnoreCase(this.format)) {
             imageToSave = image;
         } else {
             imageToSave = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
