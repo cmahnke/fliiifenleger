@@ -95,7 +95,8 @@ public class JxlImageSource extends AbstractImageSource implements ImageSource {
         int newWidth = (int) Math.ceil(width / scale);
         int newHeight = (int) Math.ceil(height / scale);
 
-        BufferedImage scaled = new BufferedImage(newWidth, newHeight, cropped.getType());
+        // See https://github.com/usnistgov/pyramidio/issues/7#issuecomment-369357845
+        BufferedImage scaled = new BufferedImage(newWidth, newHeight, cropped.getType()==0?5:cropped.getType());
         Graphics2D g = scaled.createGraphics();
         try {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);

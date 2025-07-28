@@ -24,6 +24,8 @@ import lombok.NoArgsConstructor;
 import java.awt.color.ColorSpace;
 import java.awt.image.BufferedImage;
 import java.awt.image.ColorConvertOp;
+import java.awt.image.ConvolveOp;
+import java.awt.image.Kernel;
 import java.awt.image.RescaleOp;
 import java.util.Map;
 
@@ -34,6 +36,7 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
     private String filterType = "none";
     private int thresholdValue = 128; // Default for threshold filter
     private int posterizeLevels = 4; // Default for posterize filter
+    private int blurRadius = 3; // Default for blur filter
 
     @Override
     public String getName() {
@@ -49,6 +52,9 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         }
         if (options.containsKey("posterizeLevels")) {
             this.posterizeLevels = Integer.parseInt(options.get("posterizeLevels"));
+        }
+        if (options.containsKey("blurRadius")) {
+            this.blurRadius = Integer.parseInt(options.get("blurRadius"));
         }
     }
 
@@ -75,6 +81,8 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
                 return toThreshold(original);
             case "sepia":
                 return toSepia(original);
+            case "blur":
+                return blur(original);
             case "none":
             default:
                 return original; // No filter
@@ -95,21 +103,25 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
     }
 
     private BufferedImage posterize(BufferedImage original) {
-        int mask = 0xFF << (8 - (int)(Math.log(posterizeLevels) / Math.log(2)));
+        if (posterizeLevels <= 1) {
+            return original; // No change or invalid level
+        }
+
         BufferedImage posterizedImage = new BufferedImage(original.getWidth(), original.getHeight(), original.getType());
+        // The number of segments to divide the color range into.
+        int numLevels = Math.max(2, posterizeLevels);
+        // The size of each color segment.
+        int step = 255 / (numLevels - 1);
 
         for (int y = 0; y < original.getHeight(); y++) {
             for (int x = 0; x < original.getWidth(); x++) {
                 int rgb = original.getRGB(x, y);
-                int r = (rgb >> 16) & 0xFF;
-                int g = (rgb >> 8) & 0xFF;
-                int b = rgb & 0xFF;
+                int a = (rgb >> 24) & 0xFF;
+                int r = ((rgb >> 16) & 0xFF) / step * step;
+                int g = ((rgb >> 8) & 0xFF) / step * step;
+                int b = (rgb & 0xFF) / step * step;
 
-                r &= mask;
-                g &= mask;
-                b &= mask;
-
-                int newRgb = (rgb & 0xFF000000) | (r << 16) | (g << 8) | b;
+                int newRgb = (a << 24) | (r << 16) | (g << 8) | b;
                 posterizedImage.setRGB(x, y, newRgb);
             }
         }
@@ -162,5 +174,27 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
             }
         }
         return sepiaImage;
+    }
+
+    private BufferedImage blur(BufferedImage original) {
+        // The radius must be odd for a symmetrical kernel
+        int radius = (blurRadius % 2 == 0) ? blurRadius + 1 : blurRadius;
+        int size = radius * radius;
+        float[] data = new float[size];
+        for (int i = 0; i < size; i++) {
+            data[i] = 1.0f / size;
+        }
+
+        Kernel kernel = new Kernel(radius, radius, data);
+
+        // ConvolveOp requires the source and destination to have compatible ColorModels.
+        // Creating a destination image of the same type ensures this.
+        BufferedImage blurredImage = new BufferedImage(original.getWidth(), original.getHeight(), original.getType());
+
+        // EDGE_NO_OP is a good default to avoid darkening at the edges.
+        ConvolveOp op = new ConvolveOp(kernel, ConvolveOp.EDGE_NO_OP, null);
+        op.filter(original, blurredImage);
+
+        return blurredImage;
     }
 }

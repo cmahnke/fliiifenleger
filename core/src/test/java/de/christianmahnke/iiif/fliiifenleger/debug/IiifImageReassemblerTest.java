@@ -33,6 +33,8 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Path;
@@ -56,11 +58,11 @@ class IiifImageReassemblerTest {
     private URL infoJsonUrl;
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() throws IOException, URISyntaxException {
         server = new WireMockServer(options().dynamicPort());
         server.start();
 
-        infoJsonUrl = new URL(server.baseUrl() + "/iiif/2/test-image/info.json");
+        infoJsonUrl = new URI(server.baseUrl() + "/iiif/2/test-image/info.json").toURL();
 
         // 1. Stub the info.json response
         server.stubFor(get(urlEqualTo("/iiif/2/test-image/info.json"))

@@ -20,7 +20,7 @@ package de.christianmahnke.iiif.fliiifenleger.source;
 
 public interface ManipulatorImageSource extends  ImageSource {
 
-    public void load(ImageSource baseSource);
+    void load(ImageSource baseSource);
 
 }
 

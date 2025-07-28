@@ -118,7 +118,7 @@ public class StackedImageSourceTest {
         assertTrue(stackedSource.getUrl().getPath().endsWith("stacked-image.composite"));
 
         // Verify the final source is the manipulator and it has loaded the base
-        assertTrue(stackedSource.getFinalSource() instanceof TestManipulator);
+        assertInstanceOf(TestManipulator.class, stackedSource.getFinalSource());
         assertTrue(((TestManipulator) stackedSource.getFinalSource()).isLoaded());
     }
 
@@ -141,7 +141,7 @@ public class StackedImageSourceTest {
         assertEquals(source1.getHeight(), stackedSource.getHeight());
         assertNotNull(stackedSource.getUrl());
 
-        assertTrue(stackedSource.getFinalSource() instanceof TestManipulator);
+        assertInstanceOf(TestManipulator.class, stackedSource.getFinalSource());
         assertTrue(((TestManipulator) stackedSource.getFinalSource()).isLoaded());
     }
 
@@ -163,7 +163,7 @@ public class StackedImageSourceTest {
         stackedSource.setOptions(options);
 
         assertEquals(source1.getWidth(), stackedSource.getWidth());
-        assertTrue(stackedSource.getFinalSource() instanceof FilterImageSource);
+        assertInstanceOf(FilterImageSource.class, stackedSource.getFinalSource());
     }
 
     @Test

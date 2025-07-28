@@ -35,7 +35,7 @@ import picocli.CommandLine.Parameters;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
-import java.net.URL;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -199,7 +199,7 @@ public class Main implements Runnable {
         public Integer call() {
             log.info("Starting validation for: {}", infoJsonUrl);
             try {
-                IiifImageReassembler reassembler = new IiifImageReassembler(new URL(infoJsonUrl));
+                IiifImageReassembler reassembler = new IiifImageReassembler(new URI(infoJsonUrl).toURL());
                 reassembler.load();
                 BufferedImage fullImage = reassembler.reassemble();
                 reassembler.saveImage(fullImage, outputPath, format);

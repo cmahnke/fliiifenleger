@@ -16,6 +16,7 @@
   - `generate`
   - `validate`
   - `info`
+- Advanced Usage
 
 ## Architecture
 
@@ -141,4 +142,61 @@ Displays information about available components.
 **Example:**
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar info list-sources
+```
+
+## Advanced Usage
+
+### Chaining Image Processors with `stacked`
+
+The `stacked` source type allows you to chain multiple image sources and manipulators together. This is powerful for applying a sequence of operations, such as applying a filter to a base image before tiling.
+
+Configuration is best done via a YAML file, which you pass to the `generate` command using the `--source-opt` option.
+
+**Usage:**
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  -s stacked \
+  --source-opt config=path/to/your/config.yaml
+```
+
+#### Example YAML Configuration
+
+This example loads a JPEG, applies a sepia filter, and then generates tiles from the filtered image.
+
+`config.yaml`:
+```yaml
+sources:
+  - type: default
+    path: /path/to/your/image.jpg
+  - type: filter
+    options:
+      type: sepia
+```
+
+### Available Filters
+
+The `filter` source type can be used within a `stacked` configuration to apply various image effects.
+
+| Filter `type` | Description | Additional Options |
+|---|---|---|
+| `grayscale` | Converts the image to grayscale. | |
+| `invert` | Inverts the colors of the image. | |
+| `sepia` | Applies a sepia tone to the image. | |
+| `blur` | Applies a box blur. | `blurRadius=<int>` (Default: 3) |
+| `posterize` | Reduces the number of colors in the image. | `posterizeLevels=<int>` (Default: 4) |
+| `threshold` | Converts the image to black and white based on a luminance threshold. | `thresholdValue=<int>` (Default: 128) |
+| `none` | Applies no filter (passes the image through). | |
+
+#### Filter Example with Options
+
+This configuration applies a blur with a radius of 5 pixels.
+
+```yaml
+sources:
+  - type: default
+    path: /path/to/your/image.jpg
+  - type: filter
+    options:
+      type: blur
+      blurRadius: 5
 ```

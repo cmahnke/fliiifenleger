@@ -31,6 +31,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -274,8 +275,8 @@ public class StackedImageSource implements ImageSource {
         if (finalSource != null) {
             // Set a virtual URL for the stacked image, using the final source's path
             String firstImagePath = finalSource.getUrl().getPath();
-            String stackedPath = firstImagePath.substring(0, firstImagePath.lastIndexOf('/') + 1) + "stacked-image.composite";
-            this.url = new URL("file", "", stackedPath);
+            String stackedPath = "file:" + firstImagePath.substring(0, firstImagePath.lastIndexOf('/') + 1) + "stacked-image.composite";
+            this.url = URI.create(stackedPath).toURL();
             calculateDimensions();
         } else {
             throw new IllegalArgumentException("StackedImageSource requires at least one source to be configured.");

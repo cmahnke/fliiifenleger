@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Map;
 
@@ -33,10 +35,10 @@ public class IiifImageSourceTest {
     private URL iiifInfoJsonUrl;
 
     @BeforeEach
-    public void setUp() throws MalformedURLException {
+    public void setUp() throws URISyntaxException, MalformedURLException {
         // Using a public, stable IIIF endpoint for testing.
         // This test requires an internet connection.
-        iiifInfoJsonUrl = new URL("https://images.sub.uni-goettingen.de/iiif/image/gdz:PPN001458469:00000002/info.json");
+        iiifInfoJsonUrl = new URI("https://images.sub.uni-goettingen.de/iiif/image/gdz:PPN001458469:00000002/info.json").toURL();
     }
 
     @Test
@@ -50,8 +52,8 @@ public class IiifImageSourceTest {
     }
 
     @Test
-    public void setUrl_shouldThrowExceptionForInvalidUrl() throws MalformedURLException {
-        URL badUrl = new URL("http://localhost/non-existent/info.json");
+    public void setUrl_shouldThrowExceptionForInvalidUrl() throws Exception {
+        URL badUrl = new URI("http://localhost/non-existent/info.json").toURL();
         IiifImageSource source = new IiifImageSource();
         assertThrows(ImageSourceException.class, () -> source.load(badUrl));
     }
