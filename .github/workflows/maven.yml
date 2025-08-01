@@ -43,7 +43,7 @@ jobs:
           sudo apt-get -f install
           find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
       - name: Build with Maven
-        run: mvn -B package --file pom.xml
+        run: mvn clean install package
 
       - name: Publish package
         run: mvn --batch-mode deploy

@@ -18,10 +18,12 @@
 
 package de.christianmahnke.iiif.fliiifenleger.source;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
+import java.awt.GraphicsEnvironment;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -34,11 +36,21 @@ public class IiifImageSourceTest {
 
     private URL iiifInfoJsonUrl;
 
+    @BeforeAll
+    public static void setUpClass() {
+        System.setProperty("java.awt.headless", "true");
+    }
+
     @BeforeEach
     public void setUp() throws URISyntaxException, MalformedURLException {
         // Using a public, stable IIIF endpoint for testing.
         // This test requires an internet connection.
         iiifInfoJsonUrl = new URI("https://images.sub.uni-goettingen.de/iiif/image/gdz:PPN001458469:00000002/info.json").toURL();
+    }
+
+    @Test
+    public void graphicsEnvironment_shouldBeHeadless() {
+        assertTrue(GraphicsEnvironment.isHeadless(), "Should be executed headless");
     }
 
     @Test

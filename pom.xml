@@ -9,8 +9,9 @@
     <name>Fliiifenleger</name>
     <description>A experimental Java-based static IIIF tiler.</description>
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.13.4</junit.version>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.target>22</maven.compiler.target>
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.40</lombok.version>
         <junit.version>5.13.4</junit.version>
@@ -121,6 +122,11 @@
                     <version>3.4.0</version>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.4</version>
+                </plugin>
+                <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.14.0</version>
                     <configuration>
@@ -143,14 +149,36 @@
                         </compilerArgs>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>3.12.1</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.apache.maven.doxia</groupId>
+                            <artifactId>doxia-module-markdown</artifactId>
+                            <version>1.12.0</version>
+                        </dependency>
+                    </dependencies>
+                    <configuration>
+                        <locales>en</locales>
+                        <siteDirectory>${basedir}</siteDirectory>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-project-info-reports-plugin</artifactId>
+                <version>3.6.2</version>
+            </plugin>
         </plugins>
     </build>
+    <!--
     <profiles>
         <profile>
             <id>alpine</id>
@@ -176,6 +204,7 @@
             </build>
         </profile>
     </profiles>
+    -->
     <distributionManagement>
         <repository>
             <id>github</id>

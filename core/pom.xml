@@ -82,8 +82,19 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <systemPropertyVariables>
+                        <property>
+                            <name>org.slf4j.simpleLogger.defaultLogLevel</name>
+                            <value>trace</value>
+                        </property>
+                        <property>
+                            <name>java.awt.headless</name>
+                            <value>true</value>
+                        </property>
+                    </systemPropertyVariables>
                     <argLine>
                         --enable-native-access=ALL-UNNAMED
+                        -Djava.awt.headless=true
                     </argLine>
                 </configuration>
             </plugin>

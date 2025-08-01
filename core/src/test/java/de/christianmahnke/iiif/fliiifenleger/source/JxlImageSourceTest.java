@@ -21,8 +21,10 @@ package de.christianmahnke.iiif.fliiifenleger.source;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 
 import java.awt.image.BufferedImage;
+import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -38,6 +40,11 @@ public class JxlImageSourceTest {
     private URL validJxlUrl;
     private URL nonExistentJxlUrl;
 
+    @BeforeAll
+    public static void setUpClass() {
+        System.setProperty("java.awt.headless", "true");
+    }
+
     @BeforeEach
     public void setUp() throws MalformedURLException {
         File validImageFile = new File("src/test/resources/images/front.jxl");
@@ -47,6 +54,11 @@ public class JxlImageSourceTest {
 
         File nonExistentImageFile = new File("src/test/resources/images/nonexistent.jxl");
         nonExistentJxlUrl = nonExistentImageFile.toURI().toURL();
+    }
+
+    @Test
+    public void graphicsEnvironment_shouldBeHeadless() {
+        assertTrue(GraphicsEnvironment.isHeadless(), "Should be executed headless");
     }
 
     @Test

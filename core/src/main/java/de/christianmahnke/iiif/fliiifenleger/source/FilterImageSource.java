@@ -84,8 +84,9 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
             case "blur":
                 return blur(original);
             case "none":
-            default:
                 return original; // No filter
+            default:
+                throw new IllegalArgumentException("Unknown filter type: " + filterType);
         }
     }
 

@@ -1,0 +1,33 @@
+FROM --platform=amd64 ubuntu:24.04
+
+LABEL maintainer="cmahnke@gmail.com"
+LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"
+
+WORKDIR /app
+
+COPY pom.xml .
+COPY core ./core
+COPY cli ./cli
+
+ENV JAVA_HOME=/opt/jdk \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/jdk/bin
+
+RUN apt-get update && \
+    apt-get install -y maven wget && \
+    wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz && \
+    tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz && \
+    apt install -y -f ./libjxl_0.11.1_amd64.deb && \
+    apt install -y -f ./jxl_0.11.1_amd64.deb && \
+    apt install -y -f ./libjxl-dev_0.11.1_amd64.deb && \
+    find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \; && \
+    wget https://github.com/adoptium/temurin22-binaries/releases/download/jdk-22.0.2%2B9/OpenJDK22U-jdk_x64_linux_hotspot_22.0.2_9.tar.gz && \
+    tar xzf OpenJDK22U-jdk_x64_linux_hotspot_22.0.2_9.tar.gz && \
+    mv jdk-22.0.2+9  /opt/jdk && \
+    mvn clean install && \
+    rm *.deb *.ddeb *.tar.gz 
+    #mv cli/target/fliiifenleger-cli.jar . && \
+    #rm -rf cli core pom.xml && \
+    #apt-get purge -y --auto-remove maven
+
+
+    

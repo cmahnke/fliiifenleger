@@ -23,7 +23,9 @@ import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,6 +35,7 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.awt.GraphicsEnvironment;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -44,6 +47,11 @@ public class TilerTest {
     private Tiler tiler;
     private ImageSource imageSource;
 
+    @BeforeAll
+    public static void setUpClass() {
+        System.setProperty("java.awt.headless", "true");
+    }
+
     @BeforeEach
     public void setUp() throws IOException, ImageSourceException {
         tiler = new Tiler();
@@ -53,7 +61,16 @@ public class TilerTest {
         URL validImageUrl = validImageFile.toURI().toURL();
         imageSource = new DefaultImageSource();
         imageSource.load(validImageUrl);
+        assertNotNull(imageSource.getImage(), "ImageSource implementation doesn't return image");
+        assertNotNull(imageSource.getWidth(), "ImageSource implementation doesn't return width");
+        assertNotNull(imageSource.getHeight(), "ImageSource implementation doesn't return height");
+        assertNotNull(imageSource.getImage(), "ImageSource implementation doesn't return image");
+    }
 
+    @Test
+    @Disabled
+    public void graphicsEnvironment_shouldBeHeadless() {
+        assertTrue(GraphicsEnvironment.isHeadless(), "Should be executed headless");
     }
 
     @Test

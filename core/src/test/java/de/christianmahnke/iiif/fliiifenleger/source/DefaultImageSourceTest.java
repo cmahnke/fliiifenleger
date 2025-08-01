@@ -18,10 +18,12 @@
 
 package de.christianmahnke.iiif.fliiifenleger.source;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
+import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -34,6 +36,11 @@ public class DefaultImageSourceTest {
     private URL validImageUrl;
     private URL nonExistentImageUrl;
 
+    @BeforeAll
+    public static void setUpClass() {
+        System.setProperty("java.awt.headless", "true");
+    }
+
     @BeforeEach
     public void setUp() throws MalformedURLException {
         File validImageFile = new File("src/test/resources/images/page011.jpg");
@@ -42,6 +49,11 @@ public class DefaultImageSourceTest {
 
         File nonExistentImageFile = new File("src/test/resources/images/nonexistent.jpg");
         nonExistentImageUrl = nonExistentImageFile.toURI().toURL();
+    }
+
+    @Test
+    public void graphicsEnvironment_shouldBeHeadless() {
+        assertTrue(GraphicsEnvironment.isHeadless(), "Should be executed headless");
     }
 
     @Test
