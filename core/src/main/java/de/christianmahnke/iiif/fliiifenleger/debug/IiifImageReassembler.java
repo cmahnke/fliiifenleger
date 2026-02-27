@@ -1,8 +1,7 @@
 package de.christianmahnke.iiif.fliiifenleger.debug;
 
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
-import jakarta.json.JsonReader;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +26,7 @@ public class IiifImageReassembler {
     private static final Logger log = LoggerFactory.getLogger(IiifImageReassembler.class);
 
     private final URL url;
-    private JsonObject infoJson;
+    private JsonNode infoJson;
     private URI imageBaseUri;
 
     public IiifImageReassembler(URL url) {
@@ -43,11 +42,13 @@ public class IiifImageReassembler {
         log.info("Fetching info.json from: {}", url);
         log.debug("Loading data from URL: {}", url);
         try (InputStream is = url.openStream();
-             Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8);
-             JsonReader jsonReader = Json.createReader(reader)) {
-            this.infoJson = jsonReader.readObject();
+             Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+            ObjectMapper mapper = new ObjectMapper();
+            this.infoJson = mapper.readTree(reader);
 
-            String imageIdStr = this.infoJson.getString(this.infoJson.containsKey("@id") ? "@id" : "id");
+            String imageIdStr = this.infoJson.has("@id")
+                    ? this.infoJson.get("@id").asString()
+                    : this.infoJson.get("id").asString();
             this.imageBaseUri = new URI(imageIdStr);
 
         } catch (URISyntaxException e) {
@@ -66,14 +67,16 @@ public class IiifImageReassembler {
             throw new IllegalStateException("info.json has not been loaded. Call load() first.");
         }
 
-        int fullWidth = infoJson.getInt("width", 0);
-        int fullHeight = infoJson.getInt("height", 0);
+        int fullWidth = infoJson.get("width").asInt(0);
+        int fullHeight = infoJson.get("height").asInt(0);
 
         // Find the first tile definition (usually there's only one for static images)
-        JsonObject tilesInfo = infoJson.getJsonArray("tiles").getJsonObject(0);
-        int tileWidth = tilesInfo.getInt("width", 0);
+        JsonNode tilesInfo = infoJson.get("tiles").get(0);
+        int tileWidth = tilesInfo.get("width").asInt(0);
         // V2 info.json might not have height, so we default to tileWidth
-        int tileHeight = tilesInfo.getInt("height", tileWidth);
+        int tileHeight = tilesInfo.has("height")
+                ? tilesInfo.get("height").asInt(tileWidth)
+                : tileWidth;
 
         log.info("Image dimensions: {}x{}", fullWidth, fullHeight);
         log.info("Tile dimensions: {}x{}", tileWidth, tileHeight);

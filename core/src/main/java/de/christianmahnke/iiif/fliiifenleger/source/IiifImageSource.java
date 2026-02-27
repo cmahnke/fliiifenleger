@@ -20,9 +20,8 @@ package de.christianmahnke.iiif.fliiifenleger.source;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
-import jakarta.json.JsonReader;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +52,7 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
     private URI imageBaseUri;
     private int width;
     private int height;
-    private JsonObject infoJson;
+    private JsonNode infoJson;
     private int apiLevel = -1; // -1: unknown, 0: level 0, etc.
     private ImageInfo.IIIFVersion apiVersion;
 
@@ -75,25 +74,25 @@ try {
     private void loadInfoJson() throws IOException, URISyntaxException, ImageSourceException {
         log.debug("Fetching info.json from: {}", url);
         try (InputStream is = getInputStream(url);
-            Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8);
-            JsonReader jsonReader = Json.createReader(reader)) {
-            this.infoJson = jsonReader.readObject();
+             Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+            ObjectMapper mapper = new ObjectMapper();
+            this.infoJson = mapper.readTree(reader);
 
             // Handle v3 ("id") and v2 ("@id") identifier property
             String imageIdStr;
-            if (this.infoJson.containsKey("id")) {
+            if (this.infoJson.has("id")) {
                 this.apiVersion = ImageInfo.IIIFVersion.V3;
-                imageIdStr = this.infoJson.getString("id");
+                imageIdStr = this.infoJson.get("id").asString();
             } else {
                 this.apiVersion = ImageInfo.IIIFVersion.V2;
-                imageIdStr = this.infoJson.getString("@id");
+                imageIdStr = this.infoJson.get("@id").asString();
             }
             this.imageBaseUri = new URI(imageIdStr);
-            this.width = this.infoJson.getInt("width");
-            this.height = this.infoJson.getInt("height");
+            this.width = this.infoJson.get("width").asInt();
+            this.height = this.infoJson.get("height").asInt();
 
             // Check for compliance level to handle Level 0 servers
-            if (this.infoJson.containsKey("profile")) {
+            if (this.infoJson.has("profile")) {
                 // The profile can be a string or an array. We just need to find the level.
                 String profileStr = this.infoJson.get("profile").toString();
                 if (profileStr.contains("level0")) {
@@ -217,7 +216,7 @@ try {
         // For simplicity, we'll just return a few key fields.
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("iiif_source_id", imageBaseUri.toString());
-        metadata.put("iiif_profile", infoJson.get("profile"));
+        metadata.put("iiif_profile", infoJson.get("profile").toString());
         return metadata;
     }
 }

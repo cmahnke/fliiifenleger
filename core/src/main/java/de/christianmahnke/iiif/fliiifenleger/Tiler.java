@@ -18,8 +18,8 @@
 
 package de.christianmahnke.iiif.fliiifenleger;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.slf4j.Logger;
@@ -128,8 +128,7 @@ public class Tiler {
 
         Path infoJsonPath = outputImageDir.resolve("info.json");
 
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        JsonMapper mapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
         log.debug("Writing info.json to {}", infoJsonPath);
         mapper.writeValue(infoJsonPath.toFile(), imageInfo.toJson());
         return outputImageDir;
