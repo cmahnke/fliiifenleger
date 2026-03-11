@@ -13,7 +13,7 @@
         <junit.version>6.0.3</junit.version>
         <maven.compiler.target>22</maven.compiler.target>
         <auto-service.version>1.1.1</auto-service.version>
-        <lombok.version>1.18.42</lombok.version>
+        <lombok.version>1.18.44</lombok.version>
         <junit.version>6.0.3</junit.version>
         <jackson.version>3.1.0</jackson.version>
     </properties>
