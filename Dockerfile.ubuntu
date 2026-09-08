@@ -11,10 +11,12 @@ COPY cli ./cli
 COPY jc2pa ./jc2pa
 
 ENV JAVA_HOME=/opt/jdk \
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/jdk/bin
+    CARGO_HOME=/opt/cargo \
+    RUSTUP_HOME=/opt/rustup \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/jdk/bin:/opt/cargo/bin
 
 RUN apt-get update && \
-    apt-get install -y maven wget binaryen && \
+    apt-get install -y maven wget build-essential binaryen && \
     wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz && \
     tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz && \
     apt install -y -f ./libjxl_0.11.1_amd64.deb && \
@@ -24,7 +26,13 @@ RUN apt-get update && \
     wget https://github.com/adoptium/temurin22-binaries/releases/download/jdk-22.0.2%2B9/OpenJDK22U-jdk_x64_linux_hotspot_22.0.2_9.tar.gz && \
     tar xzf OpenJDK22U-jdk_x64_linux_hotspot_22.0.2_9.tar.gz && \
     mv jdk-22.0.2+9  /opt/jdk && \
-    mvn clean install && \
+    # Rust toolchain for the jc2pa WASM build (c2pa's MSRV exceeds the
+    # rustc shipped in the Ubuntu repositories, so rustup manages it).
+    wget -qO- https://sh.rustup.rs | sh -s -- -y \
+        --profile minimal \
+        --default-toolchain stable \
+        --target wasm32-wasip1 && \
+    mvn --batch-mode clean install && \
     rm *.deb *.ddeb *.tar.gz
     #mv cli/target/fliiifenleger-cli.jar . && \
     #rm -rf cli core pom.xml && \

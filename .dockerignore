@@ -1,0 +1,14 @@
+# Keep the build context lean: local build outputs and tooling metadata are
+# not part of the source tree the Docker builds compile from.
+.git
+.idea
+.vscode
+.github
+
+# Maven and cargo build outputs (the wasm is built inside the image by the
+# rust-builder stage; the CLI jar by the Maven stage).
+**/target/
+
+# Not needed for the container builds.
+ultrahdr/
+deps/
