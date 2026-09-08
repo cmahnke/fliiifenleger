@@ -17,6 +17,7 @@ updates:
       - "/"
       - "core/"
       - "cli/"
+      - "jc2pa/"
     schedule:
       interval: "weekly"
     groups:
