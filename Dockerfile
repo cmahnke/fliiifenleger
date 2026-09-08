@@ -1,4 +1,4 @@
-FROM maven:3.9-eclipse-temurin-22-alpine AS builder
+FROM maven:3-eclipse-temurin-26-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN apk --update upgrade && \
     apk add --no-cache libjxl binaryen rust-wasm && \
     ln -s /usr/lib/libjxl.so.0.10.2 /usr/lib/libjxl.so && \
     mvn -B package
-FROM eclipse-temurin:22-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 LABEL maintainer="cmahnke@gmail.com"
 LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"

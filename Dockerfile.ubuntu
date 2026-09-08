@@ -1,4 +1,4 @@
-FROM --platform=amd64 ubuntu:24.04
+FROM --platform=amd64 ubuntu:26.04
 
 LABEL maintainer="cmahnke@gmail.com"
 LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"
