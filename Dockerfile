@@ -29,6 +29,7 @@ COPY core ./core
 COPY cli ./cli
 COPY jc2pa ./jc2pa
 COPY ultrahdr ./ultrahdr
+COPY wasm-runtime ./wasm-runtime
 
 COPY --from=rust-builder /rust-jc2pa/target/wasm32-wasip1/release/c2pa_wasm.wasm \
      jc2pa/src/main/resources/wasm/c2pa_wasm.wasm
