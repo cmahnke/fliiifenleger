@@ -6,7 +6,7 @@
     <parent>
         <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
         <artifactId>fliiifenleger-parent</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0-SNAPSHOTS</version>
     </parent>
 
     <artifactId>wasm-runtime</artifactId>
