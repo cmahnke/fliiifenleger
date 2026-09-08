@@ -22,10 +22,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up JDK 22
+      - name: Set up JDK
         uses: actions/setup-java@v6
         with:
-          java-version: '22'
+          java-version: '25'
           distribution: 'temurin'
           cache: maven
 
