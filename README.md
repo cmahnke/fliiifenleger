@@ -295,6 +295,23 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
   the Maven version from the tag, deploys the release artifacts to GitHub
   Packages, and attaches the standalone JARs to the GitHub release.
 
+### Changing the project version
+
+The version lives literally in the parent pom plus the `<parent><version>`
+reference of every module.  The versions-maven-plugin updates all of them in
+one pass:
+
+```sh
+mvn --batch-mode org.codehaus.mojo:versions-maven-plugin:2.17.1:set \
+  -DnewVersion=0.2.0-SNAPSHOT \
+  -DgenerateBackupPoms=false
+```
+
+This is the same mechanism the `release.yml` workflow uses (with the tag
+version as `-DnewVersion`) before testing and deploying a release.  Snapshot
+deploys on `main` need no version change — they publish the current
+`0.x-SNAPSHOT` artifacts.
+
 ## License
 
 Released under the [MIT License](./LICENSE).
