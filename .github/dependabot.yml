@@ -13,7 +13,7 @@ updates:
   - package-ecosystem: "maven"
     assignees:
       - cmahnke
-    directories: 
+    directories:
       - "/"
       - "core/"
       - "cli/"
@@ -29,9 +29,17 @@ updates:
       interval: "weekly"
   - package-ecosystem: "cargo"
     directory: "/jc2pa/src/main/rust"
-    schedule: 
+    schedule:
       interval: "weekly"
     groups:
       rust:
+        patterns:
+        - '*'
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      docker:
         patterns:
         - '*'

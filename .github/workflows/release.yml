@@ -31,10 +31,10 @@ jobs:
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
           echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK 21
+      - name: Set up JDK
         uses: actions/setup-java@v6
         with:
-          java-version: '21'
+          java-version: '25'
           distribution: 'temurin'
           cache: maven
 

@@ -7,7 +7,7 @@ COPY core ./core
 COPY cli ./cli
 
 RUN apk --update upgrade && \
-    apk add --no-cache libjxl rust-wasm && \
+    apk add --no-cache libjxl binaryen rust-wasm && \
     ln -s /usr/lib/libjxl.so.0.10.2 /usr/lib/libjxl.so && \
     mvn -B package 
 FROM eclipse-temurin:22-jre-alpine
