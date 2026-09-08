@@ -1,4 +1,4 @@
-/**
+/*
  * Fliiifenleger
  * Copyright (C) 2026  Christian Mahnke
  * <p>

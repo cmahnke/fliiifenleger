@@ -28,7 +28,13 @@ jobs:
           cache: maven
 
       - name: Build site
-        run: mvn -B site site:stage
+        # The install step materialises the module artifacts (core, jc2pa,
+        # cli) in the local repository first: the site goals do not compile
+        # anything, so inter-module dependency resolution would otherwise
+        # fail on a fresh runner.  The skips keep the site build free of
+        # Rust toolchain requirements (the WASM module is not needed for
+        # reporting).
+        run: mvn -B install -DskipTests -Dmaven.cargo.skip=true -Dmaven.rustup.skip=true site site:stage
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4

@@ -17,7 +17,7 @@ RUN rustup target add wasm32-wasip1 && \
 # Stage 2: build the Java modules with Maven.  The WASM module compiled in
 # stage 1 is copied into the jc2pa resources so the Maven build uses the
 # prebuilt artifact (skip-rust path) instead of invoking cargo itself.
-FROM maven:3-eclipse-temurin-26-alpine AS builder
+FROM maven:3-eclipse-temurin-25-alpine AS builder
 
 WORKDIR /app
 
@@ -49,6 +49,8 @@ RUN apk --update upgrade && \
     ln -s /usr/lib/libjxl.so.0.10.2 /usr/lib/libjxl.so && \
     rm -rf /var/cache/apk/* /root/.cache
 
-ENTRYPOINT ["java", "-jar", "fliiifenleger-cli.jar"]
+# --enable-native-access suppresses the JDK 24+ restricted-method warning
+# triggered by the JXL imageio plugin's FFM (Panama) usage.
+ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "fliiifenleger-cli.jar"]
 
 CMD ["--help"]

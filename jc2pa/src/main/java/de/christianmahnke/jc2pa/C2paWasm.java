@@ -76,6 +76,7 @@ public class C2paWasm implements Closeable {
      *                        system property / {@code auto}.
      * @throws IOException if the module cannot be loaded by any engine.
      */
+    @SuppressWarnings("this-escape") // WasmMemory only stores the reference
     public C2paWasm(byte[] wasmBytes, String engineSelection) throws IOException {
         this.engine = WasmEngine.create(engineSelection, wasmBytes);
         this.memory = new WasmMemory(engine, this);
