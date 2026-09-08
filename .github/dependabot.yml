@@ -5,7 +5,7 @@ updates:
       - cmahnke
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     groups:
       github-actions:
         patterns:
@@ -18,8 +18,20 @@ updates:
       - "core/"
       - "cli/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     groups:
       java:
+        patterns:
+        - '*'
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "cargo"
+    directory: "/jc2pa/src/main/rust"
+    schedule: 
+      interval: "weekly"
+    groups:
+      rust:
         patterns:
         - '*'

@@ -21,6 +21,7 @@
     <modules>
         <module>core</module>
         <module>cli</module>
+        <module>jc2pa</module>
     </modules>
 
     <dependencyManagement>

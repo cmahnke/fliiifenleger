@@ -170,7 +170,7 @@ public class Tiler {
                     Files.createDirectories(outputPath.getParent());
                     log.debug("Writing tile to {}", outputPath);
                     try (OutputStream os = Files.newOutputStream(outputPath)) {
-                        sink.saveTile(os, scaledImage, imageInfo.getImage().getMetadata());
+                        sink.saveTile(os, scaledImage, withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1));
                     }
 
                     if (size.width() == imageInfo.getImage().getWidth() && size.height() == imageInfo.getImage().getHeight()) {
@@ -179,7 +179,7 @@ public class Tiler {
                         Files.createDirectories(fullOutputPath.getParent());
                         log.debug("Writing tile to {}", fullOutputPath);
                         try (OutputStream os = Files.newOutputStream(fullOutputPath)) {
-                            sink.saveTile(os, scaledImage, imageInfo.getImage().getMetadata());
+                            sink.saveTile(os, scaledImage, withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1));
                         }
                     }
                 } catch (Exception e) {
@@ -218,7 +218,7 @@ public class Tiler {
 
                             BufferedImage tileImg = imageInfo.getImage().crop(tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
                             try (OutputStream os = Files.newOutputStream(outputFile)) {
-                                sink.saveTile(os, tileImg, imageInfo.getImage().getMetadata());
+                                sink.saveTile(os, tileImg, withRegion(imageInfo.getImage().getMetadata(), tileX, tileY, scaledTileWidth, scaledTileHeight, scale));
                             }
                         }
                     }
@@ -227,5 +227,29 @@ public class Tiler {
                 }
             }));
         }
+    }
+
+    /**
+     * Returns a copy of the given metadata map enriched with the tile's
+     * region in source-image coordinates.  Sinks that care about provenance
+     * (e.g. the C2PA sink) can use this to describe which part of the
+     * original image the tile depicts.
+     *
+     * @param metadata Original metadata (may be {@code null}); not modified.
+     * @param x        Tile region X in source-image pixels.
+     * @param y        Tile region Y in source-image pixels.
+     * @param w        Tile region width in source-image pixels.
+     * @param h        Tile region height in source-image pixels.
+     * @param scale    Scale factor (1 = full resolution).
+     * @return A new map with the {@code iiif.region.*} entries added.
+     */
+    private static Map<String, Object> withRegion(Map<String, Object> metadata, int x, int y, int w, int h, int scale) {
+        Map<String, Object> result = (metadata == null) ? new java.util.HashMap<>() : new java.util.HashMap<>(metadata);
+        result.put("iiif.region.x", x);
+        result.put("iiif.region.y", y);
+        result.put("iiif.region.w", w);
+        result.put("iiif.region.h", h);
+        result.put("iiif.region.scale", scale);
+        return result;
     }
 }

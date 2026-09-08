@@ -1,0 +1,6 @@
+[submodule "jc2pa/c2pa-rs"]
+	path = jc2pa/c2pa-rs
+	url = https://github.com/contentauth/c2pa-rs.git
+[submodule "jc2pa/src/main/rust"]
+	path = jc2pa/src/main/rust
+	url = https://github.com/contentauth/c2pa-js.git

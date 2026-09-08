@@ -104,7 +104,7 @@ Generates IIIF tiles from one or more local image files.
 | `--identifier <id>` | `-i` | Set the identifier in the info.json. | `http://localhost:8887/iiif/` |
 | `--iiif-version <ver>` | | Set the IIIF version. Options: `V2`, `V3`. | `V2` |
 | `--output <dir>` | `-o` | Directory where the IIIF images are generated. | `iiif` |
-| `--sink <name>` | | The image sink implementation to use for tiles. | `default` |
+| `--sink <name>` | | The image sink implementation to use for tiles. Available: `default`, `c2pa` (C2PA-signed tiles). | `default` |
 | `--sink-opt <k=v>` | | Set an option for the image sink (e.g., --sink-opt key=value). | |
 | `--source <name>` | `-s` | The image source implementation to use. | `default` |
 | `--source-opt <k=v>` | | Set an option for the image source (e.g., --source-opt key=value). | |
@@ -125,6 +125,7 @@ Validates a IIIF endpoint by reassembling the image from its tiles and saving it
 |---|---|---|---|
 | `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). | `jpg` |
 | `--output <path>` | `-o` | **Required.** Path to save the reassembled image. | |
+| `--check-c2pa` | | Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest. | |
 
 **Example:**
 ```sh
@@ -143,6 +144,58 @@ Displays information about available components.
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar info list-sources
 ```
+
+## C2PA Content Credentials
+
+Tiles can be signed with [C2PA](https://c2pa.org/) manifests (Content
+Credentials) during generation:
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --sink c2pa \
+  --sink-opt cert-name=fliiifenleger \
+  -o ./signed-iiif /path/to/image.jpg
+```
+
+The `c2pa` sink wraps the `default` sink and signs every tile with a
+per-tile manifest that contains the tile's region in source-image
+coordinates (`org.projektemacher.iiif.region` assertion).
+
+**Options** (via `--sink-opt key=value`):
+
+| Option | Description | Default |
+|---|---|---|
+| `delegate` | Name of the delegate sink that renders the tiles. | `default` |
+| `format` | Tile format. | `jpg` |
+| `runtime` | WASM engine: `auto`, `chicory` (pure-JVM, works everywhere), or `graalvm` (requires the GraalVM polyglot artifacts). | `auto` |
+| `cert` / `key` | PEM certificate chain and private key files for real signatures. Both must be given together. | – |
+| `alg` | Signing algorithm (`es256`, `ps256`, `ed25519`, …). | `es256` |
+| `tsa` | Timestamp authority URL (only with `cert`/`key`). | – |
+| `cert-name` | Common name for the ephemeral test certificate (only without `cert`/`key`). | `fliiifenleger` |
+| `claim-generator` | Claim generator string written into the manifest. | `fliiifenleger` |
+
+Without `cert`/`key`, tiles are signed with an **ephemeral self-signed
+certificate** — useful for tests and demos, but the manifests will not
+validate against any trust list. For production signing, supply a real
+certificate chain and private key, and validate against the
+[C2PA trust list](https://opensource.contentauthenticity.org/docs/conformance/trust-lists).
+
+**Technical notes:**
+* The C2PA functionality lives in the `jc2pa` module: the Rust
+  [c2pa-rs](https://github.com/contentauth/c2pa-rs) SDK is compiled to a
+  WebAssembly module (`wasm32-wasip1`) and executed on the pure-JVM
+  [Chicory](https://chicory.dev/) runtime — no native dependencies.
+* On a GraalVM runtime, `--sink-opt runtime=graalvm` (or
+  `-Djc2pa.engine=graalvm`) switches to GraalWasm; `auto` (default) picks it
+  only when running on a GraalVM with the polyglot artifacts present and
+  falls back to Chicory otherwise.
+* All WASM access is routed through a single dedicated thread; concurrent
+  tile generation is queued through it.
+* Known limitation: signing assets that already carry a C2PA manifest store
+  can trip a Chicory interpreter edge case (fresh tiles are unaffected).
+* The `jc2pa` module is self-contained: `jc2pa-*-standalone.jar` embeds the
+  compiled WASM module and offers the same operations from the command line
+  (`version`, `read`, `label`, `manifest`, `sign`, `sign-ephemeral`).
 
 ## Advanced Usage
 
@@ -200,3 +253,13 @@ sources:
       type: blur
       blurRadius: 5
 ```
+
+## Deployment
+
+GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
+* `maven.yml` — on every push to `main` it runs the full test suite and
+  deploys the `0.x-SNAPSHOT` artifacts; pull requests are only built and
+  tested.
+* `release.yml` — on a `v*` tag (e.g. `v0.1.0`) it runs the test suite, sets
+  the Maven version from the tag, deploys the release artifacts to GitHub
+  Packages, and attaches the standalone JARs to the GitHub release.

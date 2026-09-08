@@ -1,0 +1,36 @@
+[package]
+name    = "c2pa-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name       = "c2pa_wasm"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Use standard table syntax to avoid TOML inline-table single-line restriction.
+[dependencies.c2pa]
+version          = "0.84.0"
+default-features = false
+features         = [
+    "rust_native_crypto",
+]
+
+[dependencies.serde]
+version  = "1"
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1"
+
+[dependencies.thiserror]
+version = "1"
+
+[dev-dependencies]
+base64 = "0.22"
+
+[profile.release]
+opt-level     = "s"
+lto           = true
+codegen-units = 1
+strip         = true

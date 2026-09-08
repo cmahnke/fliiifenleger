@@ -1,0 +1,599 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+        <artifactId>fliiifenleger-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jc2pa</artifactId>
+    <name>Fliiifenleger :: jc2pa</name>
+    <description>A module to build the c2pa-rs library.</description>
+    <packaging>jar</packaging>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Rust build configuration -->
+        <rust.crate.dir>${project.basedir}/src/main/rust</rust.crate.dir>
+        <rust.wasm.target>wasm32-wasip1</rust.wasm.target>
+        <rust.build.profile>release</rust.build.profile>
+        <rust.wasm.output.dir>${rust.crate.dir}/target/${rust.wasm.target}/${rust.build.profile}</rust.wasm.output.dir>
+        <rust.wasm.filename>c2pa_wasm.wasm</rust.wasm.filename>
+        <wasm.resources.dir>${project.basedir}/src/main/resources/wasm</wasm.resources.dir>
+
+        <!--
+            Path to the cargo binary.  Override on machines where the default
+            `cargo` on PATH cannot build the WASM target, e.g.:
+              mvn -pl jc2pa package -Dcargo.path=$HOME/.cargo/bin/cargo
+        -->
+        <cargo.path>cargo</cargo.path>
+        <rustup.path>rustup</rustup.path>
+        <maven.cargo.skip>false</maven.cargo.skip>
+        <maven.rustup.skip>false</maven.rustup.skip>
+
+        <!-- Test fixtures -->
+        <test.fixtures.dir>${project.basedir}/src/test/resources/fixtures</test.fixtures.dir>
+
+        <!-- JAR names -->
+        <jar.lib.name>${project.artifactId}-${project.version}</jar.lib.name>
+        <jar.fat.name>${project.artifactId}-${project.version}-standalone</jar.fat.name>
+
+        <!-- Main class -->
+        <main.class>de.christianmahnke.jc2pa.Main</main.class>
+
+        <!-- Dependency versions -->
+        <chicory.version>1.7.5</chicory.version>
+        <!--
+            graalvm.version: must match across polyglot + wasm-community.
+        -->
+        <graalvm.version>24.1.0</graalvm.version>
+        <junit.version>5.10.2</junit.version>
+    </properties>
+
+    <!-- ─────────────────────────────────────────────── -->
+    <!--  Dependencies                                   -->
+    <!-- ─────────────────────────────────────────────── -->
+    <dependencies>
+
+        <!--
+            Chicory WebAssembly runtime.
+            Pure-JVM interpreter — zero native dependencies, no JNI, no GraalVM.
+            Used in:  C2paWasm.java, WasmMemory.java
+        -->
+        <dependency>
+            <groupId>com.dylibso.chicory</groupId>
+            <artifactId>runtime</artifactId>
+            <version>${chicory.version}</version>
+        </dependency>
+
+        <!--
+            Chicory WASI Preview 1 host functions.
+            Provides the wasi_snapshot_preview1 imports of the wasm module
+            (random_get, clock_time_get, fd_*, path_*, environ_*, proc_exit).
+        -->
+        <dependency>
+            <groupId>com.dylibso.chicory</groupId>
+            <artifactId>wasi</artifactId>
+            <version>${chicory.version}</version>
+        </dependency>
+
+        <!--
+            Core module: provides the TileSink interface implemented by
+            C2paTileSink.
+        -->
+        <dependency>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- ServiceLoader registration for C2paTileSink -->
+        <dependency>
+            <groupId>com.google.auto.service</groupId>
+            <artifactId>auto-service-annotations</artifactId>
+        </dependency>
+
+        <!--
+            GraalVM WebAssembly runtime (OPTIONAL).
+            Only needed when running on a GraalVM and selecting
+            -Djc2pa.engine=graalvm.  Declared optional and excluded from the
+            shaded JAR; the default Chicory engine has no dependency on it.
+            24.1.x is the last release that ships wasm-community for JDK 21.
+        -->
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>polyglot</artifactId>
+            <version>${graalvm.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>wasm-community</artifactId>
+            <version>${graalvm.version}</version>
+            <type>pom</type>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ── Test scope ─────────────────────────────── -->
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.25.3</version>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+    <!-- ─────────────────────────────────────────────── -->
+    <!--  Build                                          -->
+    <!-- ─────────────────────────────────────────────── -->
+    <build>
+
+        <finalName>${jar.lib.name}</finalName>
+
+        <plugins>
+
+            <!-- 1 ── Validate: check required tools are present ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-tools</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 2 ── Ant tasks: WASM dir, test fixtures (file operations only) ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+
+                    <!-- 2a. Ensure WASM resources dir exists -->
+                    <execution>
+                        <id>create-wasm-dir</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${wasm.resources.dir}" />
+                            </target>
+                        </configuration>
+                    </execution>
+
+                    <!-- 2d. Copy test fixtures from the cargo registry -->
+                    <execution>
+                        <id>copy-test-fixtures</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${test.fixtures.dir}" />
+
+                                <exec executable="bash"
+                                    outputproperty="c2pa.fixtures.base"
+                                    failonerror="true">
+                                    <arg value="-c" />
+                                    <arg
+                                        value="find ${user.home}/.cargo/registry/src -path '*/c2pa-0.84.0/src/identity/tests/fixtures' -type d | head -1" />
+                                </exec>
+
+                                <echo message="c2pa fixtures: ${c2pa.fixtures.base}" />
+
+                                <copy todir="${test.fixtures.dir}"
+                                    failonerror="true">
+                                    <fileset
+                                        dir="${c2pa.fixtures.base}/claim_aggregation/ica_validation">
+                                        <include name="success.jpg" />
+                                        <include name="signature_mismatch.jpg" />
+                                        <include name="invalid_cose_sign1.jpg" />
+                                    </fileset>
+                                    <fileset dir="${c2pa.fixtures.base}/validation_method">
+                                        <include name="malformed_cbor.jpg" />
+                                    </fileset>
+                                </copy>
+
+                                <echo message="✅ test fixtures copied" />
+                            </target>
+                        </configuration>
+                    </execution>
+
+                    <!-- 2e. Remove test fixtures on clean -->
+                    <execution>
+                        <id>clean-test-fixtures</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <delete dir="${test.fixtures.dir}" quiet="true" />
+                                <echo message="✅ test fixtures deleted" />
+                            </target>
+                        </configuration>
+                    </execution>
+
+                </executions>
+            </plugin>
+
+            <!-- 3 ── All cargo/rustup invocations (single plugin) ── -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+
+                    <!-- 3a. Verify cargo is available -->
+                    <execution>
+                        <id>cargo-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <arguments>
+                                <argument>--version</argument>
+                            </arguments>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+
+                    <!-- 3b. Ensure wasm32-wasip1 target is installed (idempotent) -->
+                    <execution>
+                        <id>rustup-target-add</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${rustup.path}</executable>
+                            <arguments>
+                                <argument>target</argument>
+                                <argument>add</argument>
+                                <argument>${rust.wasm.target}</argument>
+                            </arguments>
+                            <skip>${maven.rustup.skip}</skip>
+                        </configuration>
+                    </execution>
+
+                    <!-- 3c. cargo build → WASM -->
+                    <execution>
+                        <id>cargo-build-wasm</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <workingDirectory>${rust.crate.dir}</workingDirectory>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>--target</argument>
+                                <argument>${rust.wasm.target}</argument>
+                                <argument>--release</argument>
+                                <argument>--color</argument>
+                                <argument>always</argument>
+                            </arguments>
+                            <environmentVariables>
+                                <CARGO_INCREMENTAL>1</CARGO_INCREMENTAL>
+                            </environmentVariables>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+
+                    <!-- 3d. cargo clean → runs on every mvn clean -->
+                    <execution>
+                        <id>cargo-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <workingDirectory>${rust.crate.dir}</workingDirectory>
+                            <arguments>
+                                <argument>clean</argument>
+                            </arguments>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+
+                </executions>
+            </plugin>
+
+            <!-- 4 ── Copy .wasm into resources ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>default-resources</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>resources</goal>
+                        </goals>
+                    </execution>
+
+                    <execution>
+                        <id>copy-wasm-binary</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${wasm.resources.dir}</outputDirectory>
+                            <overwrite>true</overwrite>
+                            <useBuildFilters>false</useBuildFilters>
+                            <resources>
+                                <resource>
+                                    <directory>${rust.wasm.output.dir}</directory>
+                                    <includes>
+                                        <include>${rust.wasm.filename}</include>
+                                    </includes>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 5 ── Standard compiler ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                    <compilerArgs>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <!-- 6 ── Surefire for JUnit 5 ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                    <!--
+                        One fresh JVM per test class: c2pa-rs keeps
+                        process-global state that accumulates across many
+                        reader/builder operations; per-class forking keeps
+                        the suites deterministic.
+                    -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
+                </configuration>
+            </plugin>
+
+            <!-- 7 ── library JAR without dependencies -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <!-- 8 ── Fat-JAR mit Main-Class ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.2</version>
+                <executions>
+                    <execution>
+                        <id>fat-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>
+                                ${project.build.directory}/${jar.fat.name}.jar
+                            </outputFile>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>${main.class}</mainClass>
+                                </transformer>
+                                <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>org.graalvm.*:*</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 9 ── clean: remove copied .wasm from resources -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.3.2</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>${wasm.resources.dir}</directory>
+                            <includes>
+                                <include>*.wasm</include>
+                            </includes>
+                        </fileset>
+                        <!-- test fixtures are deleted via the antrun clean-test-fixtures execution -->
+                    </filesets>
+                </configuration>
+            </plugin>
+
+        </plugins>
+    </build>
+
+    <!-- ─────────────────────────────────────────────── -->
+    <!--  Profiles                                       -->
+    <!-- ─────────────────────────────────────────────── -->
+    <profiles>
+
+        <!-- dev profile: debug WASM build, no optimization -->
+        <profile>
+            <id>dev</id>
+            <properties>
+                <rust.build.profile>debug</rust.build.profile>
+                <rust.wasm.output.dir>
+                    ${rust.crate.dir}/target/${rust.wasm.target}/debug
+                </rust.wasm.output.dir>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>cargo-build-wasm</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${cargo.path}</executable>
+                                    <workingDirectory>${rust.crate.dir}</workingDirectory>
+                                    <arguments>
+                                        <argument>build</argument>
+                                        <argument>--target</argument>
+                                        <argument>${rust.wasm.target}</argument>
+                                        <!-- no - -release flag for debug builds -->
+                                    </arguments>
+                                    <skip>${maven.cargo.skip}</skip>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- CI profile: Rust tests + clippy -->
+        <profile>
+            <id>ci</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+
+                            <execution>
+                                <id>cargo-test</id>
+                                <phase>test-compile</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${cargo.path}</executable>
+                                    <workingDirectory>${rust.crate.dir}</workingDirectory>
+                                    <arguments>
+                                        <argument>test</argument>
+                                        <argument>--</argument>
+                                        <argument>--test-threads=4</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+
+                            <execution>
+                                <id>cargo-clippy</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${cargo.path}</executable>
+                                    <workingDirectory>${rust.crate.dir}</workingDirectory>
+                                    <arguments>
+                                        <argument>clippy</argument>
+                                        <argument>--target</argument>
+                                        <argument>${rust.wasm.target}</argument>
+                                        <argument>--</argument>
+                                        <argument>-D</argument>
+                                        <argument>warnings</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- skip-rust: skip the Rust build (use the prebuilt .wasm) -->
+        <profile>
+            <id>skip-rust</id>
+            <properties>
+                <maven.cargo.skip>true</maven.cargo.skip>
+                <maven.rustup.skip>true</maven.rustup.skip>
+            </properties>
+        </profile>
+
+    </profiles>
+
+</project>

@@ -16,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Fetches IIIF tiles from an Image API endpoint and reassembles them into a single image.
@@ -28,6 +30,12 @@ public class IiifImageReassembler {
     private final URL url;
     private JsonNode infoJson;
     private URI imageBaseUri;
+
+    /**
+     * Raw tile bytes collected during the last reassembly when C2PA
+     * collection was requested (tile URL → asset bytes).
+     */
+    private final Map<String, byte[]> fetchedTileBytes = new ConcurrentHashMap<>();
 
     public IiifImageReassembler(URL url) {
         this.url = url;
@@ -63,9 +71,24 @@ public class IiifImageReassembler {
      * @throws IllegalStateException if load() has not been called first.
      */
     public BufferedImage reassemble() {
+        return reassemble(false);
+    }
+
+    /**
+     * Reassembles the full image from its tiles at the highest resolution.
+     *
+     * @param collectC2paBytes When {@code true}, the raw bytes of every
+     *                         fetched tile are collected (for C2PA checks)
+     *                         and can be retrieved with
+     *                         {@link #getFetchedTileBytes()}.
+     * @return A BufferedImage containing the reassembled image.
+     * @throws IllegalStateException if load() has not been called first.
+     */
+    public BufferedImage reassemble(boolean collectC2paBytes) {
         if (infoJson == null || imageBaseUri == null) {
             throw new IllegalStateException("info.json has not been loaded. Call load() first.");
         }
+        fetchedTileBytes.clear();
 
         int fullWidth = infoJson.get("width").asInt(0);
         int fullHeight = infoJson.get("height").asInt(0);
@@ -111,7 +134,12 @@ public class IiifImageReassembler {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
                         log.debug("Fetching tile: {}", tileUrl);
-                        BufferedImage tileImage = ImageIO.read(new URI(tileUrl).toURL());
+                        byte[] tileBytes = new URI(tileUrl).toURL()
+                            .openStream().readAllBytes();
+                        if (collectC2paBytes) {
+                            fetchedTileBytes.put(tileUrl, tileBytes);
+                        }
+                        BufferedImage tileImage = ImageIO.read(new ByteArrayInputStream(tileBytes));
                         if (tileImage != null) {
                             // Drawing must be synchronized
                             synchronized (g2d) {
@@ -144,6 +172,16 @@ public class IiifImageReassembler {
      * @param format     The image format (e.g., "jpg", "png").
      * @throws IOException if the image cannot be saved.
      */
+    /**
+     * Returns the raw bytes of the tiles fetched by the last
+     * {@link #reassemble(boolean)} call with C2PA collection enabled.
+     *
+     * @return Tile URL → asset bytes.
+     */
+    public Map<String, byte[]> getFetchedTileBytes() {
+        return Map.copyOf(fetchedTileBytes);
+    }
+
     public void saveImage(BufferedImage image, Path outputPath, String format) throws IOException {
         log.debug("Writing reassembled image to: {}", outputPath);
         ImageIO.write(image, format, outputPath.toFile());

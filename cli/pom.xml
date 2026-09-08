@@ -18,6 +18,11 @@
             <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
             <artifactId>core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>jc2pa</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- CLI -->
         <dependency>
             <groupId>info.picocli</groupId>
@@ -27,6 +32,26 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.25.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock</artifactId>
+            <version>4.0.0-beta.29</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -62,7 +87,13 @@
                                     <mainClass>de.christianmahnke.iiif.fliiifenleger.cli.Main</mainClass>
                                 </transformer>
                             </transformers>
-                            <minimizeJar>true</minimizeJar>
+                            <!--
+                                minimizeJar must stay off: it strips
+                                ServiceLoader providers (twelvemonkeys
+                                imageio plugins, ImageSource/TileSink
+                                implementations) that are only referenced
+                                through META-INF/services.
+                            -->
                             <finalName>fliiifenleger-cli</finalName>
                         </configuration>
                     </execution>

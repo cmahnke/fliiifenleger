@@ -24,6 +24,7 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.TilerException;
 import de.christianmahnke.iiif.fliiifenleger.debug.IiifImageReassembler;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
+import de.christianmahnke.jc2pa.TileSigner;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -195,20 +196,62 @@ public class Main implements Runnable {
         @Option(names = {"-f", "--format"}, description = "Output image format (e.g., jpg, png).", defaultValue = "jpg")
         private String format;
 
+        @Option(names = {"--check-c2pa"},
+                description = "Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest.")
+        private boolean checkC2pa;
+
         @Override
         public Integer call() {
             log.info("Starting validation for: {}", infoJsonUrl);
             try {
                 IiifImageReassembler reassembler = new IiifImageReassembler(new URI(infoJsonUrl).toURL());
                 reassembler.load();
-                BufferedImage fullImage = reassembler.reassemble();
+                BufferedImage fullImage = reassembler.reassemble(checkC2pa);
                 reassembler.saveImage(fullImage, outputPath, format);
                 log.info("Validation successful. Reassembled image saved to {}", outputPath);
+
+                if (checkC2pa) {
+                    return checkC2paManifests(reassembler.getFetchedTileBytes());
+                }
             } catch (Exception e) {
                 log.error("Validation failed: {}", e.getMessage(), e);
                 return 1;
             }
             return 0;
+        }
+
+        /**
+         * Reports the C2PA manifest status of every fetched tile.
+         *
+         * @return 0 when every tile carries a manifest, 2 otherwise.
+         */
+        private int checkC2paManifests(Map<String, byte[]> tileBytes) {
+            int signed = 0;
+            int unsigned = 0;
+            try (TileSigner signer = new TileSigner((String) null)) {
+                for (Map.Entry<String, byte[]> tile : tileBytes.entrySet()) {
+                    String label;
+                    try {
+                        label = signer.activeLabel(tile.getValue(), "image/jpeg");
+                    } catch (Exception e) {
+                        label = null;
+                        log.warn("C2PA check failed for {}: {}", tile.getKey(), e.getMessage());
+                    }
+                    if (label != null) {
+                        log.info("C2PA {} -> manifest {}", tile.getKey(), label);
+                        signed++;
+                    } else {
+                        log.warn("C2PA {} -> no valid manifest", tile.getKey());
+                        unsigned++;
+                    }
+                }
+            } catch (Exception e) {
+                log.error("C2PA checker failed: {}", e.getMessage(), e);
+                return 1;
+            }
+            log.info("C2PA summary: {} signed, {} unsigned of {} tiles", signed, unsigned,
+                     signed + unsigned);
+            return unsigned == 0 ? 0 : 2;
         }
     }
 
