@@ -37,9 +37,6 @@
         <maven.cargo.skip>false</maven.cargo.skip>
         <maven.rustup.skip>false</maven.rustup.skip>
 
-        <!-- Test fixtures -->
-        <test.fixtures.dir>${project.basedir}/src/test/resources/fixtures</test.fixtures.dir>
-
         <!-- JAR names -->
         <jar.lib.name>${project.artifactId}-${project.version}</jar.lib.name>
         <jar.fat.name>${project.artifactId}-${project.version}-standalone</jar.fat.name>
@@ -186,60 +183,6 @@
                         <configuration>
                             <target>
                                 <mkdir dir="${wasm.resources.dir}" />
-                            </target>
-                        </configuration>
-                    </execution>
-
-                    <!-- 2d. Copy test fixtures from the cargo registry -->
-                    <execution>
-                        <id>copy-test-fixtures</id>
-                        <phase>generate-test-resources</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <mkdir dir="${test.fixtures.dir}" />
-
-                                <exec executable="bash"
-                                    outputproperty="c2pa.fixtures.base"
-                                    failonerror="true">
-                                    <arg value="-c" />
-                                    <arg
-                                        value="find ${user.home}/.cargo/registry/src -path '*/c2pa-0.84.0/src/identity/tests/fixtures' -type d | head -1" />
-                                </exec>
-
-                                <echo message="c2pa fixtures: ${c2pa.fixtures.base}" />
-
-                                <copy todir="${test.fixtures.dir}"
-                                    failonerror="true">
-                                    <fileset
-                                        dir="${c2pa.fixtures.base}/claim_aggregation/ica_validation">
-                                        <include name="success.jpg" />
-                                        <include name="signature_mismatch.jpg" />
-                                        <include name="invalid_cose_sign1.jpg" />
-                                    </fileset>
-                                    <fileset dir="${c2pa.fixtures.base}/validation_method">
-                                        <include name="malformed_cbor.jpg" />
-                                    </fileset>
-                                </copy>
-
-                                <echo message="✅ test fixtures copied" />
-                            </target>
-                        </configuration>
-                    </execution>
-
-                    <!-- 2e. Remove test fixtures on clean -->
-                    <execution>
-                        <id>clean-test-fixtures</id>
-                        <phase>clean</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <delete dir="${test.fixtures.dir}" quiet="true" />
-                                <echo message="✅ test fixtures deleted" />
                             </target>
                         </configuration>
                     </execution>
@@ -478,7 +421,6 @@
                                 <include>*.wasm</include>
                             </includes>
                         </fileset>
-                        <!-- test fixtures are deleted via the antrun clean-test-fixtures execution -->
                     </filesets>
                 </configuration>
             </plugin>

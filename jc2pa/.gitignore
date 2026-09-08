@@ -1,3 +1,2 @@
 src/main/resources/wasm/*.wasm
 src/main/rust/target/
-src/test/resources/fixtures/

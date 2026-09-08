@@ -214,5 +214,11 @@
             <name>GitHub Fliiifenleger Packages</name>
             <url>https://maven.pkg.github.com/cmahnke/fliiifenleger</url>
         </repository>
+        <!-- Required by site:stage — base URL of the staged site (GitHub Pages). -->
+        <site>
+            <id>github-pages</id>
+            <name>Fliiifenleger Site</name>
+            <url>https://cmahnke.github.io/fliiifenleger</url>
+        </site>
     </distributionManagement>
 </project>

@@ -32,7 +32,8 @@ COPY --from=rust-builder /rust/target/wasm32-wasip1/release/c2pa_wasm.wasm \
 RUN apk --update upgrade && \
     apk add --no-cache libjxl && \
     ln -s /usr/lib/libjxl.so.0.10.2 /usr/lib/libjxl.so && \
-    mvn --batch-mode package -Dmaven.cargo.skip=true
+    mvn --batch-mode package \
+        -Dmaven.cargo.skip=true -Dmaven.rustup.skip=true
 
 FROM eclipse-temurin:25-jre-alpine
 
