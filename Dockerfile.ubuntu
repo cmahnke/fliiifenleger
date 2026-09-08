@@ -8,6 +8,7 @@ WORKDIR /app
 COPY pom.xml .
 COPY core ./core
 COPY cli ./cli
+COPY jc2pa ./jc2pa
 
 ENV JAVA_HOME=/opt/jdk \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/jdk/bin
@@ -24,10 +25,7 @@ RUN apt-get update && \
     tar xzf OpenJDK22U-jdk_x64_linux_hotspot_22.0.2_9.tar.gz && \
     mv jdk-22.0.2+9  /opt/jdk && \
     mvn clean install && \
-    rm *.deb *.ddeb *.tar.gz 
+    rm *.deb *.ddeb *.tar.gz
     #mv cli/target/fliiifenleger-cli.jar . && \
     #rm -rf cli core pom.xml && \
     #apt-get purge -y --auto-remove maven
-
-
-    

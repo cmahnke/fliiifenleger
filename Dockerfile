@@ -5,11 +5,12 @@ WORKDIR /app
 COPY pom.xml .
 COPY core ./core
 COPY cli ./cli
+COPY jc2pa ./jc2pa
 
 RUN apk --update upgrade && \
     apk add --no-cache libjxl binaryen rust-wasm && \
     ln -s /usr/lib/libjxl.so.0.10.2 /usr/lib/libjxl.so && \
-    mvn -B package 
+    mvn -B package
 FROM eclipse-temurin:22-jre-alpine
 
 LABEL maintainer="cmahnke@gmail.com"
