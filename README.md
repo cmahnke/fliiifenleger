@@ -312,6 +312,11 @@ version as `-DnewVersion`) before testing and deploying a release.  Snapshot
 deploys on `main` need no version change — they publish the current
 `0.x-SNAPSHOT` artifacts.
 
+Re-running a release for the same version works out of the box: GitHub
+Packages treats release versions as immutable (re-deploying returns
+`409 Conflict`), so `release.yml` deletes previously published package
+versions of the release before deploying.
+
 ## License
 
 Released under the [MIT License](./LICENSE).

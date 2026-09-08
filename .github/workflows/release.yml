@@ -83,14 +83,49 @@ jobs:
       - name: Run tests
         run: mvn --batch-mode verify
 
+      # GitHub Packages is immutable for release versions — re-deploying the
+      # same version returns 409 Conflict.  Remove any previously published
+      # package versions of this release so re-running a release works.
+      - name: Remove pre-existing package versions of this release
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PREFIX="de.christianmahnke.iiif.fliiifenleger"
+
+          PACKAGES=$(gh api -H "Accept: application/vnd.github+json" \
+              "/user/packages?package_type=maven" \
+              --jq ".[] | select(.name | startswith(\"$PREFIX\")) | .name" 2>/dev/null || true)
+
+          DELETED=0
+          for PACKAGE in $PACKAGES; do
+            IDS=$(gh api -H "Accept: application/vnd.github+json" \
+                  "/user/packages/maven/$PACKAGE/versions" \
+                  --jq ".[] | select(.name == \"$VERSION\") | .id" 2>/dev/null || true)
+            for ID in $IDS; do
+              echo "Deleting $PACKAGE $VERSION (id $ID)"
+              gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                "/user/packages/maven/$PACKAGE/versions/$ID" && DELETED=$((DELETED + 1))
+            done
+          done
+          echo "deleted $DELETED pre-existing package version(s)"
+          # Version deletion propagates asynchronously — give the registry a
+          # moment so the subsequent deploy does not race into a 409.
+          if [ "$DELETED" -gt 0 ]; then sleep 15; fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy release artifacts to GitHub Packages
         run: mvn --batch-mode deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach standalone JARs to the GitHub release
+        # Pushing a tag does not create a GitHub Release object — create it
+        # if missing (with auto-generated notes), then attach the JARs.
         run: |
-          gh release upload "${{ steps.version.outputs.tag }}" \
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" --generate-notes --verify-tag \
+            || gh release view "$TAG" > /dev/null
+          gh release upload "$TAG" \
             cli/target/fliiifenleger-cli.jar \
             jc2pa/target/jc2pa-*-standalone.jar \
             --clobber

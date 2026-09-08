@@ -6,7 +6,7 @@
     <parent>
         <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
         <artifactId>fliiifenleger-parent</artifactId>
-        <version>0.3.0-SNAPSHOTS</version>
+        <version>0.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>ultrahdr</artifactId>
@@ -162,6 +162,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
                         <id>create-wasm-dir</id>
@@ -182,6 +183,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>copy-wasm-binary</id>
