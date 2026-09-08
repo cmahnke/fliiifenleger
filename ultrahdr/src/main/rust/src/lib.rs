@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Christian Mahnke
+
 // UltraHDR WASM wrapper.
 //
 // Exposes a container-level C ABI over the pure Rust ultrahdr-rs codec:

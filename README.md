@@ -294,3 +294,11 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
 * `release.yml` — on a `v*` tag (e.g. `v0.1.0`) it runs the test suite, sets
   the Maven version from the tag, deploys the release artifacts to GitHub
   Packages, and attaches the standalone JARs to the GitHub release.
+
+## License
+
+Released under the [MIT License](./LICENSE).
+
+Exception: `jc2pa/src/main/rust/src/lib.rs` is derived from Adobe's
+[c2pa-js](https://github.com/contentauth/c2pa-js) (`packages/c2pa-wasm`,
+itself MIT-licensed) and retains its original Adobe copyright notice.

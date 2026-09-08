@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Christian Mahnke
+
 // src/main/java/de/christianmahnke/jc2pa/TileSigner.java
 package de.christianmahnke.jc2pa;
 

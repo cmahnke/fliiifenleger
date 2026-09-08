@@ -3,7 +3,10 @@
 //
 // NOTICE: Adobe permits you to use, modify, and distribute this file in
 // accordance with the terms of the Adobe license agreement accompanying
-// it.
+// it.  That agreement is the MIT LICENSE of the c2pa-js repository this
+// file is derived from (https://github.com/contentauth/c2pa-js).
+//
+// SPDX-License-Identifier: MIT
 //
 // Sync WASM library (trimmed).
 //

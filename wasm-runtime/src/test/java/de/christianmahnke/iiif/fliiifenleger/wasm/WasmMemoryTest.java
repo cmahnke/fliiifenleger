@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Christian Mahnke
+
 // src/test/java/de/christianmahnke/iiif/fliiifenleger/wasm/WasmMemoryTest.java
 package de.christianmahnke.iiif.fliiifenleger.wasm;
 

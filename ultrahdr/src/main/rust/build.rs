@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Christian Mahnke
+
 // Extracts the resolved ultrahdr-rs version from Cargo.lock and exposes it
 // to the crate as the UHDR_RS_VERSION environment variable.
 use std::env;
