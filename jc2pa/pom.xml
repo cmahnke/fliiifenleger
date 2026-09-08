@@ -43,39 +43,12 @@
         <main.class>de.christianmahnke.jc2pa.Main</main.class>
 
         <!-- Dependency versions -->
-        <chicory.version>1.7.5</chicory.version>
-        <!--
-            graalvm.version: must match across polyglot + wasm-community.
-        -->
-        <graalvm.version>25.3.4.1</graalvm.version>
     </properties>
 
     <!-- ─────────────────────────────────────────────── -->
     <!--  Dependencies                                   -->
     <!-- ─────────────────────────────────────────────── -->
     <dependencies>
-
-        <!--
-            Chicory WebAssembly runtime.
-            Pure-JVM interpreter — zero native dependencies, no JNI, no GraalVM.
-            Used in:  C2paWasm.java, WasmMemory.java
-        -->
-        <dependency>
-            <groupId>com.dylibso.chicory</groupId>
-            <artifactId>runtime</artifactId>
-            <version>${chicory.version}</version>
-        </dependency>
-
-        <!--
-            Chicory WASI Preview 1 host functions.
-            Provides the wasi_snapshot_preview1 imports of the wasm module
-            (random_get, clock_time_get, fd_*, path_*, environ_*, proc_exit).
-        -->
-        <dependency>
-            <groupId>com.dylibso.chicory</groupId>
-            <artifactId>wasi</artifactId>
-            <version>${chicory.version}</version>
-        </dependency>
 
         <!--
             Core module: provides the TileSink interface implemented by
@@ -86,43 +59,17 @@
             <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>
-
-        <!--
-            Required at compile time: chicory-wasi classes carry the
-            @HostModule annotation but do not declare this artifact as a
-            transitive dependency (upstream packaging gap).
-        -->
+        <!-- Shared WASM engine layer (WasmEngine/Chicory/WasmMemory). -->
         <dependency>
-            <groupId>com.dylibso.chicory</groupId>
-            <artifactId>annotations</artifactId>
-            <version>${chicory.version}</version>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>wasm-runtime</artifactId>
+            <version>${project.version}</version>
         </dependency>
 
         <!-- ServiceLoader registration for C2paTileSink -->
         <dependency>
             <groupId>com.google.auto.service</groupId>
             <artifactId>auto-service-annotations</artifactId>
-        </dependency>
-
-        <!--
-            GraalVM WebAssembly runtime (OPTIONAL).
-            Only needed when running on a GraalVM and selecting
-            -Djc2pa.engine=graalvm.  Declared optional and excluded from the
-            shaded JAR; the default Chicory engine has no dependency on it.
-            24.1.x is the last release that ships wasm-community for JDK 21.
-        -->
-        <dependency>
-            <groupId>org.graalvm.polyglot</groupId>
-            <artifactId>polyglot</artifactId>
-            <version>${graalvm.version}</version>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.polyglot</groupId>
-            <artifactId>wasm-community</artifactId>
-            <version>${graalvm.version}</version>
-            <type>pom</type>
-            <optional>true</optional>
         </dependency>
 
         <!-- ── Test scope ─────────────────────────────── -->

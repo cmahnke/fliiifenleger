@@ -21,11 +21,16 @@ package de.christianmahnke.iiif.fliiifenleger;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
+import de.christianmahnke.iiif.fliiifenleger.source.GainMapData;
+import de.christianmahnke.iiif.fliiifenleger.source.GainMapSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
+import java.io.ByteArrayInputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -170,7 +175,9 @@ public class Tiler {
                     Files.createDirectories(outputPath.getParent());
                     log.debug("Writing tile to {}", outputPath);
                     try (OutputStream os = Files.newOutputStream(outputPath)) {
-                        sink.saveTile(os, scaledImage, withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1));
+                        Map<String, Object> meta = withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1);
+                        withGainMap(imageInfo, meta, 0, 0, size.width(), size.height());
+                        sink.saveTile(os, scaledImage, meta);
                     }
 
                     if (size.width() == imageInfo.getImage().getWidth() && size.height() == imageInfo.getImage().getHeight()) {
@@ -179,7 +186,9 @@ public class Tiler {
                         Files.createDirectories(fullOutputPath.getParent());
                         log.debug("Writing tile to {}", fullOutputPath);
                         try (OutputStream os = Files.newOutputStream(fullOutputPath)) {
-                            sink.saveTile(os, scaledImage, withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1));
+                            Map<String, Object> fullMeta = withRegion(imageInfo.getImage().getMetadata(), 0, 0, size.width(), size.height(), 1);
+                            withGainMap(imageInfo, fullMeta, 0, 0, size.width(), size.height());
+                            sink.saveTile(os, scaledImage, fullMeta);
                         }
                     }
                 } catch (Exception e) {
@@ -218,7 +227,9 @@ public class Tiler {
 
                             BufferedImage tileImg = imageInfo.getImage().crop(tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
                             try (OutputStream os = Files.newOutputStream(outputFile)) {
-                                sink.saveTile(os, tileImg, withRegion(imageInfo.getImage().getMetadata(), tileX, tileY, scaledTileWidth, scaledTileHeight, scale));
+                                Map<String, Object> meta = withRegion(imageInfo.getImage().getMetadata(), tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
+                                withGainMap(imageInfo, meta, tileX, tileY, scaledTileWidth, scaledTileHeight);
+                                sink.saveTile(os, tileImg, meta);
                             }
                         }
                     }
@@ -226,6 +237,73 @@ public class Tiler {
                     throw new RuntimeException("Failed to generate tiles for scale " + scale, e);
                 }
             }));
+        }
+    }
+
+    /**
+     * Enriches the given metadata map with the cropped gain map tile when the
+     * image source carries an UltraHDR gain map (see {@link GainMapSource}).
+     * <p>The gain map is cropped with the region mapped from primary-image
+     * coordinates through the {@code primaryWidth / gainmapWidth} ratio,
+     * rounding outwards (floor for the start, ceiling for the end) so the
+     * crop always fully covers the tile region; ISO 21496-1 readers scale
+     * the gain map back to the primary dimensions, so slight over-coverage
+     * at tile edges is harmless.
+     *
+     * @param imageInfo The image info (primary dimensions).
+     * @param metadata  The metadata map to enrich.
+     * @param x         Tile region X in primary-image pixels.
+     * @param y         Tile region Y in primary-image pixels.
+     * @param w         Tile region width in primary-image pixels.
+     * @param h         Tile region height in primary-image pixels.
+     */
+    private void withGainMap(ImageInfo imageInfo, Map<String, Object> metadata,
+                             int x, int y, int w, int h) {
+        if (!(imageInfo.getImage() instanceof GainMapSource gainMapSource)) {
+            return;
+        }
+        try {
+            GainMapData gainMap = gainMapSource.getGainMap();
+            if (gainMap == null) {
+                return;
+            }
+
+            double ratioX = (double) imageInfo.getImage().getWidth() / gainMap.width();
+            double ratioY = (double) imageInfo.getImage().getHeight() / gainMap.height();
+
+            int gx0 = (int) Math.floor(x / ratioX);
+            int gy0 = (int) Math.floor(y / ratioY);
+            int gx1 = (int) Math.ceil((x + w) / ratioX);
+            int gy1 = (int) Math.ceil((y + h) / ratioY);
+            gx0 = Math.max(0, Math.min(gx0, gainMap.width() - 1));
+            gy0 = Math.max(0, Math.min(gy0, gainMap.height() - 1));
+            gx1 = Math.max(gx0 + 1, Math.min(gx1, gainMap.width()));
+            gy1 = Math.max(gy0 + 1, Math.min(gy1, gainMap.height()));
+
+            BufferedImage gainmapImage = ImageIO.read(new ByteArrayInputStream(gainMap.gainmapJpeg()));
+            if (gainmapImage == null) {
+                log.warn("Gain map image could not be decoded; tile will not carry a gain map");
+                return;
+            }
+            // A copy, not a subimage view: the source image may be reused for
+            // the next tile while this one is encoded asynchronously.
+            BufferedImage cropped = gainmapImage.getSubimage(gx0, gy0, gx1 - gx0, gy1 - gy0);
+            BufferedImage copy = new BufferedImage(cropped.getWidth(), cropped.getHeight(), cropped.getType());
+            Graphics2D g = copy.createGraphics();
+            try {
+                g.drawImage(cropped, 0, 0, null);
+            } finally {
+                g.dispose();
+            }
+
+            metadata.put(GainMapData.META_IMAGE, copy);
+            metadata.put(GainMapData.META_METADATA, gainMap.metadataJson());
+            metadata.put(GainMapData.META_X, gx0);
+            metadata.put(GainMapData.META_Y, gy0);
+            metadata.put(GainMapData.META_W, gx1 - gx0);
+            metadata.put(GainMapData.META_H, gy1 - gy0);
+        } catch (Exception e) {
+            log.warn("Gain map crop failed; tile will not carry a gain map: {}", e.getMessage());
         }
     }
 

@@ -104,9 +104,9 @@ Generates IIIF tiles from one or more local image files.
 | `--identifier <id>` | `-i` | Set the identifier in the info.json. | `http://localhost:8887/iiif/` |
 | `--iiif-version <ver>` | | Set the IIIF version. Options: `V2`, `V3`. | `V2` |
 | `--output <dir>` | `-o` | Directory where the IIIF images are generated. | `iiif` |
-| `--sink <name>` | | The image sink implementation to use for tiles. Available: `default`, `c2pa` (C2PA-signed tiles). | `default` |
+| `--sink <name>` | | The image sink implementation to use for tiles. Available: `default`, `ultrahdr` (tiles with integrated gain maps), `c2pa` (C2PA-signed tiles). | `default` |
 | `--sink-opt <k=v>` | | Set an option for the image sink (e.g., --sink-opt key=value). | |
-| `--source <name>` | `-s` | The image source implementation to use. | `default` |
+| `--source <name>` | `-s` | The image source implementation to use. Available: `default`, `ultrahdr` (UltraHDR JPEGs with gain maps), `jxl`, … | `default` |
 | `--source-opt <k=v>` | | Set an option for the image source (e.g., --source-opt key=value). | |
 | `--tile-size <size>` | `-t` | Set the tile size. | `1024` |
 | `--zoom-levels <num>` | `-z` | Set the number of zoom levels. Set to `0` to auto-calculate. | `0` |
@@ -144,6 +144,37 @@ Displays information about available components.
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar info list-sources
 ```
+
+## UltraHDR (gain map) tiling
+
+UltraHDR JPEGs (ISO 21496-1 gain maps, as produced by current smartphones) can
+be tiled so that **every tile remains HDR-capable**: the tile's region of the
+gain map is cropped alongside the primary image and re-embedded into the tile.
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --source ultrahdr \
+  --sink ultrahdr \
+  --sink-opt quality=90 --sink-opt gainmap-quality=85 \
+  -o ./hdr-iiif /path/to/ultrahdr.jpg
+```
+
+* `--source ultrahdr` splits the source into primary image, gain map and
+  metadata; plain JPEGs without a gain map are handled like the `default`
+  source (tiles stay SDR).
+* `--sink ultrahdr` wraps a delegate sink and assembles each tile with its
+  cropped gain map and the original metadata.  Tiles from gain-map-less
+  sources pass through unchanged.
+* Options: `delegate` (delegate sink, default `default`), `runtime` (WASM
+  engine, default `auto`), `quality` (primary re-encode, default `90`),
+  `gainmap-quality` (default `85`).
+
+**Technical notes:** like C2PA, the gain map codec lives in its own module
+(`ultrahdr`): the pure-Rust [`ultrahdr-rs`](https://github.com/imazen/ultrahdr)
+codec is compiled to WebAssembly (`wasm32-wasip1`, ~200 KB) and executed
+through the shared `wasm-runtime` layer (pure-JVM Chicory by default).  The
+two codec modules (`jc2pa`, `ultrahdr`) are independent — each keeps exactly
+one live WASM instance per JVM.
 
 ## C2PA Content Credentials
 

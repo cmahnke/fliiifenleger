@@ -1,6 +1,8 @@
 // src/test/java/de/christianmahnke/jc2pa/TestWasmSupport.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

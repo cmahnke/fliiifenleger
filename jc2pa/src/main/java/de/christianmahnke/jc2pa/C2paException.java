@@ -1,6 +1,8 @@
 // src/main/java/de/christianmahnke/jc2pa/C2paException.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmException;
+
 /**
  * Thrown when a c2pa WASM function returns an error string.
  *
@@ -8,7 +10,7 @@ package de.christianmahnke.jc2pa;
  * {@code WasmError} type, which wraps {@code c2pa::Error},
  * {@code serde_json::Error}, or a boxed {@code std::error::Error}.
  */
-public class C2paException extends RuntimeException {
+public class C2paException extends WasmException {
 
     private static final long serialVersionUID = 1L;
 

@@ -1,21 +1,22 @@
-// src/main/java/de/christianmahnke/jc2pa/WasmMemory.java
-package de.christianmahnke.jc2pa;
+// src/main/java/de/christianmahnke/iiif/fliiifenleger/wasm/WasmMemory.java
+package de.christianmahnke.iiif.fliiifenleger.wasm;
 
 import java.nio.charset.StandardCharsets;
 
 /**
- * Low-level helpers for reading and writing into WASM linear memory.
+ * Low-level helpers for reading and writing into WASM linear memory, built
+ * on the module memory contract ({@code wasm_alloc}/{@code wasm_free} —
+ * see {@link WasmEngine}).
  *
- * <p>Backed by the {@link WasmEngine} abstraction, so it works with any
- * engine.  All addresses are plain Java {@code int} values (WASM is 32-bit).
+ * <p>All addresses are plain Java {@code int} values (WASM is 32-bit).
  *
- * <p>Memory ownership contract (defined in {@code lib.rs}):
+ * <p>Memory ownership contract (defined by the codec crates):
  * <ul>
  *   <li><b>Input buffers</b>  – allocated here via {@link #allocBytes} /
  *       {@link #allocString}, freed here after the WASM call returns.</li>
  *   <li><b>Output buffers</b> – allocated by WASM (Rust global allocator),
  *       ownership transferred to the caller on return.  The caller MUST
- *       free them with {@link C2paWasm#wasmFree(int, int)}.</li>
+ *       free them with {@link WasmEngine#free(int, int)}.</li>
  *   <li><b>Out-parameter slots</b> – 4-byte regions allocated here to hold
  *       {@code u32} or pointer values written by WASM.  Always freed by
  *       the caller after reading.</li>
@@ -23,15 +24,17 @@ import java.nio.charset.StandardCharsets;
  */
 public final class WasmMemory {
 
-    /** The engine providing linear-memory access. */
+    /** The engine providing linear-memory access and the alloc/free exports. */
     private final WasmEngine engine;
 
-    /** Reference back to the owning {@link C2paWasm} for alloc/free calls. */
-    private final C2paWasm wasm;
-
-    WasmMemory(WasmEngine engine, C2paWasm wasm) {
+    /**
+     * Creates a memory helper for the given engine.
+     *
+     * @param engine The engine providing linear memory and the
+     *               {@code wasm_alloc}/{@code wasm_free} exports.
+     */
+    public WasmMemory(WasmEngine engine) {
         this.engine = engine;
-        this.wasm   = wasm;
     }
 
     // ── Reading ───────────────────────────────────────────────────────────────
@@ -115,17 +118,17 @@ public final class WasmMemory {
     // ── Allocation helpers ────────────────────────────────────────────────────
 
     /**
-     * Copy a Java {@code byte[]} into WASM linear memory via
-     * {@code wasm_alloc}, returning the WASM address.
+     * Copy a Java {@code byte[]} into WASM linear memory via the module's
+     * {@code wasm_alloc} export, returning the WASM address.
      *
      * <p>The caller is responsible for freeing the buffer with
-     * {@link C2paWasm#wasmFree(int, int)} when done.
+     * {@link WasmEngine#free(int, int)} when done.
      *
      * @param data Bytes to copy.
      * @return WASM address of the allocated buffer.
      */
     public int allocBytes(byte[] data) {
-        int ptr = wasm.wasmAlloc(data.length);
+        int ptr = engine.alloc(data.length);
         writeBytes(ptr, data);
         return ptr;
     }
@@ -135,7 +138,7 @@ public final class WasmMemory {
      * the WASM address.
      *
      * <p>The caller is responsible for freeing the buffer with
-     * {@link C2paWasm#wasmFree(int, int)} when done, using the byte length
+     * {@link WasmEngine#free(int, int)} when done, using the byte length
      * of the UTF-8 encoding (NOT the Java {@code String} length).
      *
      * @param s String to encode and copy.
@@ -150,12 +153,12 @@ public final class WasmMemory {
      *
      * <p>Pass the returned address as a {@code *mut u32} argument to a WASM
      * function; read the result back with {@link #readU32(int)}; then free
-     * with {@code wasm.wasmFree(slot, 4)}.
+     * with {@code engine.free(slot, 4)}.
      *
      * @return WASM address of the 4-byte slot.
      */
     public int allocU32Slot() {
-        int ptr = wasm.wasmAlloc(4);
+        int ptr = engine.alloc(4);
         writeU32(ptr, 0);
         return ptr;
     }
@@ -167,7 +170,7 @@ public final class WasmMemory {
      * <p>In wasm32, a pointer is 4 bytes — identical to a {@code u32} slot.
      * Pass the returned address as a {@code *mut *mut u8} argument to a WASM
      * function; read the result back with {@link #readPtr(int)}; then free
-     * with {@code wasm.wasmFree(slot, 4)}.
+     * with {@code engine.free(slot, 4)}.
      *
      * @return WASM address of the 4-byte pointer slot.
      */

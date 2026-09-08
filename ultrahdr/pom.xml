@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+        <artifactId>fliiifenleger-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ultrahdr</artifactId>
+    <name>Fliiifenleger :: ultrahdr</name>
+    <description>
+        UltraHDR (gain map) support: the ultrahdr-rs Rust codec compiled to
+        WebAssembly, executed through the shared wasm-runtime layer.  Provides
+        the UltraHdrImageSource and UltraHdrTileSink for tiling with
+        integrated gainmaps.  (Skeleton — implementation in progress.)
+    </description>
+    <packaging>jar</packaging>
+
+    <properties>
+        <!-- Rust build configuration (mirrors the jc2pa module). -->
+        <rust.crate.dir>${project.basedir}/src/main/rust</rust.crate.dir>
+        <rust.wasm.target>wasm32-wasip1</rust.wasm.target>
+        <rust.build.profile>release</rust.build.profile>
+        <rust.wasm.output.dir>${rust.crate.dir}/target/${rust.wasm.target}/${rust.build.profile}</rust.wasm.output.dir>
+        <rust.wasm.filename>ultrahdr_wasm.wasm</rust.wasm.filename>
+        <wasm.resources.dir>${project.basedir}/src/main/resources/wasm</wasm.resources.dir>
+        <cargo.path>cargo</cargo.path>
+        <rustup.path>rustup</rustup.path>
+        <maven.cargo.skip>false</maven.cargo.skip>
+        <maven.rustup.skip>false</maven.rustup.skip>
+    </properties>
+
+    <dependencies>
+        <!-- Core module: provides the ImageSource/TileSink interfaces. -->
+        <dependency>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Shared WASM engine layer (WasmEngine/Chicory/WasmMemory). -->
+        <dependency>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>wasm-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- ServiceLoader registration for UltraHdrImageSource/TileSink -->
+        <dependency>
+            <groupId>com.google.auto.service</groupId>
+            <artifactId>auto-service-annotations</artifactId>
+        </dependency>
+
+        <!-- Test scope -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.25.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <useModulePath>false</useModulePath>
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
+                </configuration>
+            </plugin>
+
+            <!--
+                1 ── Maven↔cargo integration (single exec-maven-plugin; same
+                      wiring as the jc2pa module).
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>cargo-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <arguments>
+                                <argument>--version</argument>
+                            </arguments>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>rustup-target-add</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${rustup.path}</executable>
+                            <arguments>
+                                <argument>target</argument>
+                                <argument>add</argument>
+                                <argument>${rust.wasm.target}</argument>
+                            </arguments>
+                            <skip>${maven.rustup.skip}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>cargo-build-wasm</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <workingDirectory>${rust.crate.dir}</workingDirectory>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>--target</argument>
+                                <argument>${rust.wasm.target}</argument>
+                                <argument>--release</argument>
+                                <argument>--color</argument>
+                                <argument>always</argument>
+                            </arguments>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>cargo-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${cargo.path}</executable>
+                            <workingDirectory>${rust.crate.dir}</workingDirectory>
+                            <arguments>
+                                <argument>clean</argument>
+                            </arguments>
+                            <skip>${maven.cargo.skip}</skip>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 2 ── WASM resources dir + fixture copy (file operations only) ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>create-wasm-dir</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${wasm.resources.dir}" />
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 3 ── Copy .wasm into resources (generate-resources, after cargo) ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-wasm-binary</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${wasm.resources.dir}</outputDirectory>
+                            <changeDetection>always</changeDetection>
+                            <resources>
+                                <resource>
+                                    <directory>${rust.wasm.output.dir}</directory>
+                                    <includes>
+                                        <include>${rust.wasm.filename}</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 4 ── Clean: remove the copied .wasm from resources ── -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>${wasm.resources.dir}</directory>
+                            <includes>
+                                <include>*.wasm</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

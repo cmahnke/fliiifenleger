@@ -19,8 +19,10 @@
 
     <modules>
         <module>core</module>
+        <module>wasm-runtime</module>
         <module>cli</module>
         <module>jc2pa</module>
+        <module>ultrahdr</module>
     </modules>
 
     <dependencyManagement>

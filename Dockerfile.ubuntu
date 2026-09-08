@@ -9,6 +9,7 @@ COPY pom.xml .
 COPY core ./core
 COPY cli ./cli
 COPY jc2pa ./jc2pa
+COPY ultrahdr ./ultrahdr
 
 ENV JAVA_HOME=/opt/jdk \
     CARGO_HOME=/opt/cargo \

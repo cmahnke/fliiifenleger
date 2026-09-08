@@ -1,6 +1,9 @@
 // src/main/java/de/christianmahnke/jc2pa/C2paWasm.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,14 +75,14 @@ public class C2paWasm implements Closeable {
      *
      * @param wasmBytes       Raw WASM binary bytes.
      * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
-     *                        or {@code null} for the {@code jc2pa.engine}
+     *                        or {@code null} for the {@code wasm.engine}
      *                        system property / {@code auto}.
      * @throws IOException if the module cannot be loaded by any engine.
      */
     @SuppressWarnings("this-escape") // WasmMemory only stores the reference
     public C2paWasm(byte[] wasmBytes, String engineSelection) throws IOException {
         this.engine = WasmEngine.create(engineSelection, wasmBytes);
-        this.memory = new WasmMemory(engine, this);
+        this.memory = new WasmMemory(engine);
     }
 
     /**
@@ -142,7 +145,7 @@ public class C2paWasm implements Closeable {
      * @return WASM linear memory address of the allocated buffer.
      */
     public int wasmAlloc(int size) {
-        return call("wasm_alloc", size);
+        return engine.alloc(size);
     }
 
     /**
@@ -155,9 +158,7 @@ public class C2paWasm implements Closeable {
      * @param size Number of bytes that were allocated (ignored if 0).
      */
     public void wasmFree(int ptr, int size) {
-        if (ptr != 0 && size > 0) {
-            engine.execExport("wasm_free", ptr, size);
-        }
+        engine.free(ptr, size);
     }
 
     // ── Reader exports ────────────────────────────────────────────────────────

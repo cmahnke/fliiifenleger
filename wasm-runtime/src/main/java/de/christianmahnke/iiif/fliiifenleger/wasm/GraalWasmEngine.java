@@ -1,5 +1,5 @@
 // src/main/java/de/christianmahnke/jc2pa/GraalWasmEngine.java
-package de.christianmahnke.jc2pa;
+package de.christianmahnke.iiif.fliiifenleger.wasm;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;

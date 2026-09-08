@@ -1,5 +1,5 @@
 // src/main/java/de/christianmahnke/jc2pa/ChicoryEngine.java
-package de.christianmahnke.jc2pa;
+package de.christianmahnke.iiif.fliiifenleger.wasm;
 
 import com.dylibso.chicory.runtime.ExportFunction;
 import com.dylibso.chicory.runtime.Instance;

@@ -8,10 +8,13 @@ FROM rust:1-alpine AS rust-builder
 
 RUN apk add --no-cache musl-dev
 
-COPY jc2pa/src/main/rust /rust
-WORKDIR /rust
+COPY jc2pa/src/main/rust /rust-jc2pa
+COPY ultrahdr/src/main/rust /rust-ultrahdr
+WORKDIR /rust-jc2pa
 
 RUN rustup target add wasm32-wasip1 && \
+    cargo build --target wasm32-wasip1 --release && \
+    cd /rust-ultrahdr && \
     cargo build --target wasm32-wasip1 --release
 
 # Stage 2: build the Java modules with Maven.  The WASM module compiled in
@@ -25,9 +28,12 @@ COPY pom.xml .
 COPY core ./core
 COPY cli ./cli
 COPY jc2pa ./jc2pa
+COPY ultrahdr ./ultrahdr
 
-COPY --from=rust-builder /rust/target/wasm32-wasip1/release/c2pa_wasm.wasm \
+COPY --from=rust-builder /rust-jc2pa/target/wasm32-wasip1/release/c2pa_wasm.wasm \
      jc2pa/src/main/resources/wasm/c2pa_wasm.wasm
+COPY --from=rust-builder /rust-ultrahdr/target/wasm32-wasip1/release/ultrahdr_wasm.wasm \
+     ultrahdr/src/main/resources/wasm/ultrahdr_wasm.wasm
 
 RUN apk --update upgrade && \
     apk add --no-cache libjxl && \

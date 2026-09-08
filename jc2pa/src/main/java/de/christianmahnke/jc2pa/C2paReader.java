@@ -1,6 +1,8 @@
 // src/main/java/de/christianmahnke/jc2pa/C2paReader.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+
 import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 

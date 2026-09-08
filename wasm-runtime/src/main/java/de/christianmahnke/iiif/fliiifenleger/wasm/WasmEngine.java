@@ -1,12 +1,12 @@
-// src/main/java/de/christianmahnke/jc2pa/WasmEngine.java
-package de.christianmahnke.jc2pa;
+// src/main/java/de/christianmahnke/iiif/fliiifenleger/wasm/WasmEngine.java
+package de.christianmahnke.iiif.fliiifenleger.wasm;
 
 import java.io.Closeable;
 import java.io.IOException;
 
 /**
- * Abstraction over the WebAssembly runtime used to execute the
- * {@code c2pa_wasm} module.
+ * Abstraction over the WebAssembly runtime used to execute the compiled
+ * codec modules (c2pa, ultrahdr, …).
  *
  * <p>Two implementations exist:
  * <ul>
@@ -19,17 +19,24 @@ import java.io.IOException;
  *
  * <p>The engine is chosen automatically by {@link #create(String, byte[])}
  * (see there for the selection rules) and can be pinned with the
- * {@code jc2pa.engine} system property ({@code auto}, {@code chicory}, or
+ * {@code wasm.engine} system property ({@code auto}, {@code chicory}, or
  * {@code graalvm}).
  *
- * <p><b>Threading:</b> WASM execution is single-threaded in both engines.
- * Implementations must not be invoked from multiple threads without external
- * synchronisation.
+ * <p><b>Module memory contract:</b> every module executed through this
+ * engine must export {@code wasm_alloc(size) -> ptr} and
+ * {@code wasm_free(ptr, size)} — the standard ownership convention used by
+ * all fliiifenleger codec crates (see the crate READMEs).  {@link
+ * #allocBytes}, {@link #allocString} and friends build on these exports.
+ *
+ * <p><b>Threading:</b> WASM execution is single-threaded in both engines,
+ * and codec libraries keep process-global state — route all access through
+ * one dedicated thread (see the TileSigner in the jc2pa module for the
+ * pattern) and never create two live instances of the same module per JVM.
  */
 public abstract class WasmEngine implements Closeable {
 
     /** System property selecting the engine: {@code auto}, {@code chicory}, or {@code graalvm}. */
-    public static final String ENGINE_PROPERTY = "jc2pa.engine";
+    public static final String ENGINE_PROPERTY = "wasm.engine";
 
     /** Engine name for the Chicory implementation. */
     public static final String CHICORY = "chicory";
@@ -41,7 +48,7 @@ public abstract class WasmEngine implements Closeable {
 
     /**
      * Create an engine for the given WASM module bytes, honouring the
-     * {@code jc2pa.engine} system property.
+     * {@code wasm.engine} system property.
      *
      * <p>Selection rules:
      * <ul>
@@ -75,7 +82,7 @@ public abstract class WasmEngine implements Closeable {
                 return createAuto(wasmBytes);
             default:
                 throw new IllegalArgumentException(
-                    "Unknown jc2pa.engine value: " + chosen
+                    "Unknown wasm.engine value: " + chosen
                     + " (expected auto, chicory, or graalvm)");
         }
     }
@@ -123,7 +130,7 @@ public abstract class WasmEngine implements Closeable {
 
     /**
      * Invoke an exported function and return its first result as an
-     * {@code int} (the module's exports all produce i32/u32 or pointer
+     * {@code int} (the modules' exports all produce i32/u32 or pointer
      * values).
      *
      * @param name Export name, e.g. {@code "wasm_alloc"}.
@@ -155,16 +162,42 @@ public abstract class WasmEngine implements Closeable {
     /** Write a 32-bit little-endian value at {@code address}. */
     public abstract void writeU32(int address, int value);
 
+    // ── Module memory contract (wasm_alloc / wasm_free) ──────────────────────
+
     /**
-     * Release the engine's resources.  Narrowed to not throw — failures on
-     * close must not mask the outcome of the operations performed before.
+     * Allocate {@code size} zeroed bytes in the module's linear memory via
+     * the {@code wasm_alloc} export.
+     *
+     * @param size Number of bytes to allocate (must be &gt; 0).
+     * @return WASM linear memory address of the allocated buffer.
      */
-    @Override
-    public abstract void close();
+    public int alloc(int size) {
+        return callExport("wasm_alloc", size);
+    }
+
+    /**
+     * Free memory previously allocated by {@link #alloc} or returned as an
+     * output buffer by a module function, via the {@code wasm_free} export.
+     *
+     * @param ptr  WASM linear memory address to free (ignored if 0).
+     * @param size Number of bytes that were allocated (ignored if 0).
+     */
+    public void free(int ptr, int size) {
+        if (ptr != 0 && size > 0) {
+            execExport("wasm_free", ptr, size);
+        }
+    }
 
     /**
      * @return {@code true} if this engine's runtime artifacts are present on
      *         the classpath.
      */
     public abstract boolean isAvailable();
+
+    /**
+     * Release the engine's resources.  Narrowed to not throw — failures on
+     * close must not mask the outcome of the operations performed before.
+     */
+    @Override
+    public abstract void close();
 }

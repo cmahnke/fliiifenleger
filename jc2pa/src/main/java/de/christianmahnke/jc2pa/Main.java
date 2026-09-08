@@ -18,6 +18,8 @@
 
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;

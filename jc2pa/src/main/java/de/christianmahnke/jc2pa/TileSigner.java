@@ -1,6 +1,8 @@
 // src/main/java/de/christianmahnke/jc2pa/TileSigner.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Callable;
@@ -51,7 +53,7 @@ public final class TileSigner implements AutoCloseable {
      * by {@code engineSelection} (see {@link WasmEngine#create}).
      *
      * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
-     *                        or {@code null} for the {@code jc2pa.engine}
+     *                        or {@code null} for the {@code wasm.engine}
      *                        system property / {@code auto}.
      * @throws IOException if the WASM module cannot be loaded.
      */

@@ -1,6 +1,8 @@
 // src/test/java/de/christianmahnke/jc2pa/C2paWasmTest.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
