@@ -10,5 +10,4 @@
 **/target/
 
 # Not needed for the container builds.
-ultrahdr/
 deps/

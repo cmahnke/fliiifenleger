@@ -40,8 +40,8 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
-          # The staged site (and all module sub-sites) live under the
-          # locale directory configured in the site plugin.
-          folder: target/staging/en
+          # Default-locale render: the staged site (and all module
+          # sub-sites) sit directly in the staging root.
+          folder: target/staging
           clean: true
           single-commit: true
