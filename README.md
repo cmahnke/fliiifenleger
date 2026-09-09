@@ -4,6 +4,8 @@
 
 `fliiifenleger` is a Java-based command-line tool for generating and validating static IIIF (International Image Interoperability Framework) images. It can process local image files, create IIIF-compliant tile structures, and validate existing IIIF endpoints.
 
+> **This software comes without any warranty of any kind.** `fliiifenleger` is a platform for experiments — most notably the `ultrahdr` and `c2pa` modules, which explore HDR imaging and digital provenance (background articles are linked in the respective sections below).
+
 ## Table of Contents
 
 - Features
@@ -154,6 +156,8 @@ java -jar cli/target/fliiifenleger-cli.jar info list-sources
 
 ## UltraHDR (gain map) tiling
 
+Background: [HDR IIIF](https://christianmahnke.de/en/post/hdr-iiif/).
+
 UltraHDR JPEGs (ISO 21496-1 gain maps, as produced by current smartphones) can
 be tiled so that **every tile remains HDR-capable**: the tile's region of the
 gain map is cropped alongside the primary image and re-embedded into the tile.
@@ -184,6 +188,8 @@ two codec modules (`jc2pa`, `ultrahdr`) are independent — each keeps exactly
 one live WASM instance per JVM.
 
 ## C2PA Content Credentials
+
+Background: [Digital Provenance](https://christianmahnke.de/en/post/digital-provenance/).
 
 Tiles can be signed with [C2PA](https://c2pa.org/) manifests (Content
 Credentials) during generation:
