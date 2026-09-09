@@ -61,6 +61,13 @@ The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic
     mvn clean package
     ```
 
+    **Useful properties and profiles:**
+    * `-DskipTests` — skip the test suite.
+    * `-Dmaven.cargo.skip=true` — do not rebuild the WASM modules (uses the committed `c2pa_wasm.wasm` / `ultrahdr_wasm.wasm`).
+    * `-Dmaven.rustup.skip=true` — also skip the rustup target check.
+    * `-Dcargo.path` / `-Drustup.path` — override the cargo/rustup binaries (toolchains not on the `PATH`).
+    * Maven profiles: `dev` (debug WASM build), `ci` (Rust tests and clippy), `skip-rust` (use the committed WASM) — all in the `jc2pa` module.
+
 ## Installation
 
 After building, the executable JAR will be located at `cli/target/fliiifenleger-cli.jar`. You can run it directly with `java -jar`.
@@ -104,9 +111,9 @@ Generates IIIF tiles from one or more local image files.
 | `--identifier <id>` | `-i` | Set the identifier in the info.json. | `http://localhost:8887/iiif/` |
 | `--iiif-version <ver>` | | Set the IIIF version. Options: `V2`, `V3`. | `V2` |
 | `--output <dir>` | `-o` | Directory where the IIIF images are generated. | `iiif` |
-| `--sink <name>` | | The image sink implementation to use for tiles. Available: `default`, `ultrahdr` (tiles with integrated gain maps), `c2pa` (C2PA-signed tiles). | `default` |
+| `--sink <name>` | | The image sink implementation to use for tiles. Available: `default` (option: `format`), `ultrahdr` (tiles with integrated gain maps), `c2pa` (C2PA-signed tiles). | `default` |
 | `--sink-opt <k=v>` | | Set an option for the image sink (e.g., --sink-opt key=value). | |
-| `--source <name>` | `-s` | The image source implementation to use. Available: `default`, `ultrahdr` (UltraHDR JPEGs with gain maps), `jxl`, … | `default` |
+| `--source <name>` | `-s` | The image source implementation to use. Available: `default`, `ultrahdr` (UltraHDR JPEGs with gain maps), `iiif` (re-tile a remote IIIF image), `jxl` (JPEG XL, needs libjxl), `stacked` (source chain, see Advanced Usage), `filter` (standalone filter, see Advanced Usage). | `default` |
 | `--source-opt <k=v>` | | Set an option for the image source (e.g., --source-opt key=value). | |
 | `--tile-size <size>` | `-t` | Set the tile size. | `1024` |
 | `--zoom-levels <num>` | `-z` | Set the number of zoom levels. Set to `0` to auto-calculate. | `0` |
@@ -217,16 +224,18 @@ certificate chain and private key, and validate against the
   WebAssembly module (`wasm32-wasip1`) and executed on the pure-JVM
   [Chicory](https://chicory.dev/) runtime — no native dependencies.
 * On a GraalVM runtime, `--sink-opt runtime=graalvm` (or
-  `-Djc2pa.engine=graalvm`) switches to GraalWasm; `auto` (default) picks it
+  `-Dwasm.engine=graalvm`) switches to GraalWasm; `auto` (default) picks it
   only when running on a GraalVM with the polyglot artifacts present and
-  falls back to Chicory otherwise.
+  falls back to Chicory otherwise.  The same option exists on the ultrahdr
+  side (`--source-opt runtime=…` / `--sink-opt runtime=…`).
 * All WASM access is routed through a single dedicated thread; concurrent
   tile generation is queued through it.
 * Known limitation: signing assets that already carry a C2PA manifest store
   can trip a Chicory interpreter edge case (fresh tiles are unaffected).
 * The `jc2pa` module is self-contained: `jc2pa-*-standalone.jar` embeds the
   compiled WASM module and offers the same operations from the command line
-  (`version`, `read`, `label`, `manifest`, `sign`, `sign-ephemeral`).
+  (`version`, `read`, `label`, `manifest`, `validate`, `sign`,
+  `sign-ephemeral`).
 
 ## Advanced Usage
 
@@ -255,6 +264,26 @@ sources:
   - type: filter
     options:
       type: sepia
+```
+
+### Re-tiling a remote IIIF image (`iiif`)
+
+The `iiif` source fetches an existing IIIF image by its `info.json` URL and re-tiles it locally — useful to mirror or re-generate tiles from a remote endpoint:
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --source iiif -o ./my-iiif \
+  https://example.org/iiif/2/my-image/info.json
+```
+
+### Standalone filter source (`filter`)
+
+The filters documented below can also be used directly as an image source instead of inside a `stacked` chain:
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --source filter --source-opt type=sepia \
+  -o ./filtered /path/to/image.jpg
 ```
 
 ### Available Filters
@@ -294,6 +323,10 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
 * `release.yml` — on a `v*` tag (e.g. `v0.1.0`) it runs the test suite, sets
   the Maven version from the tag, deploys the release artifacts to GitHub
   Packages, and attaches the standalone JARs to the GitHub release.
+* `maven-site.yml` — publishes the generated Maven site (this documentation)
+  to GitHub Pages on every push to `main`.
+* `docker.yml` — builds and publishes the Docker images
+  (`Dockerfile`, `Dockerfile.ubuntu`).
 
 ### Changing the project version
 

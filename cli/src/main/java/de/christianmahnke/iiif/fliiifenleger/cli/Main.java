@@ -83,7 +83,7 @@ public class Main implements Runnable {
         @Option(names = "--sink-opt", description = "Set an option for the image sink (e.g., -Dkey=value).")
         private Map<String, String> sinkOptions;
 
-        @Option(names = "--iiif-version", description = "Set the IIIF version. Options are V2, V3_0.", defaultValue = "V2")
+        @Option(names = "--iiif-version", description = "Set the IIIF version. Options are V2, V3.", defaultValue = "V2")
         private ImageInfo.IIIFVersion version;
 
         @Parameters(index = "0..*", description = "Input image files to process.")
