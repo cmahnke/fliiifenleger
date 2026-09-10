@@ -20,7 +20,7 @@ RUN rustup target add wasm32-wasip1 && \
 # Stage 2: build the Java modules with Maven.  The WASM module compiled in
 # stage 1 is copied into the jc2pa resources so the Maven build uses the
 # prebuilt artifact (skip-rust path) instead of invoking cargo itself.
-FROM maven:3-eclipse-temurin-25-alpine AS builder
+FROM maven:3-eclipse-temurin-26-alpine AS builder
 
 WORKDIR /app
 
