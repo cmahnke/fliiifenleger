@@ -279,7 +279,12 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
         json.append("      \"label\": \"c2pa.actions\",\n");
         json.append("      \"data\": {\n");
         json.append("        \"actions\": [\n");
-        json.append("          { \"action\": \"c2pa.created\" }\n");
+        // A c2pa.created action must carry a digitalSourceType, otherwise
+        // validators report assertion.action.malformed.  Tiles are
+        // algorithmically cropped and re-encoded without changing the main
+        // content of the source image.
+        json.append("          { \"action\": \"c2pa.created\", \"digitalSourceType\": "
+            + "\"http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicallyEnhanced\" }\n");
         json.append("        ]\n");
         json.append("      }\n");
         json.append("    },\n");

@@ -173,6 +173,27 @@ public final class TileSigner implements AutoCloseable {
         });
     }
 
+    /**
+     * Read the validation results of an asset's manifest store as JSON.
+     * Runs on the dedicated signer thread (all WASM access must happen
+     * there — see the class documentation).
+     *
+     * @param assetBytes Raw asset bytes.
+     * @param format     MIME type or file extension, e.g. {@code "image/jpeg"}.
+     * @return The validation results JSON string, or {@code null} when the
+     *         store has no validation results.
+     * @throws C2paException         on WASM error.
+     * @throws IllegalStateException if this signer has been closed.
+     */
+    public String validationResultsJson(byte[] assetBytes, String format)
+            throws C2paException {
+        return submitRead(() -> {
+            try (C2paReader reader = C2paReader.fromBytes(wasm, format, assetBytes)) {
+                return reader.validationResultsJson();
+            }
+        });
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /**

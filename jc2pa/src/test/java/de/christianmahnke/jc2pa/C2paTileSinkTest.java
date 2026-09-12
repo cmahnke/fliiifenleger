@@ -99,6 +99,13 @@ class C2paTileSinkTest {
                 assertThat(json).contains("org.projektemacher.iiif.region");
                 assertThat(json).contains("\"x\": 0");
                 assertThat(json).contains("\"scale\": 1");
+                // The c2pa.created action must carry a digitalSourceType,
+                // otherwise validators report assertion.action.malformed.
+                assertThat(json).contains("digitalSourceType");
+                assertThat(json).contains("algorithmicallyEnhanced");
+                String results = signer.validationResultsJson(tile, "image/jpeg");
+                assertThat(results).isNotNull()
+                    .doesNotContain("assertion.action.malformed");
             } finally {
                 signer.close();
             }

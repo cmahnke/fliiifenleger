@@ -224,6 +224,77 @@ validate against any trust list. For production signing, supply a real
 certificate chain and private key, and validate against the
 [C2PA trust list](https://opensource.contentauthenticity.org/docs/conformance/trust-lists).
 
+### Signing with your own certificate
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --sink c2pa \
+  --sink-opt cert=chain.pem \
+  --sink-opt key=key.pem \
+  --sink-opt alg=es256 \
+  -o ./signed-iiif /path/to/image.jpg
+```
+
+Requirements for `cert` / `key` (checked at signing time — a mismatch
+fails with `the certificate is invalid`):
+
+* `cert` is a PEM file holding the certificate chain with the
+  end-entity certificate first, followed by the intermediate/CA
+  certificate(s).
+* `key` is the PEM-encoded (PKCS#8) private key matching the
+  end-entity certificate.
+* `alg` must match the key type: `es256` for EC P-256 keys (default),
+  `ps256` for RSA keys (at least 2048 bit), `ed25519` for Ed25519 keys.
+* The end-entity certificate must be X.509v3, currently valid, carry
+  the `digitalSignature` key usage and an allowed extended key usage
+  (e.g. `emailProtection`), plus subject/authority key identifiers, and
+  its subject must contain an organization (`O`) attribute — without it,
+  validation misleadingly reports `claimSignature.mismatch`. A bare
+  self-signed certificate without this structure is rejected.
+* `tsa` optionally adds a trusted timestamp (timestamp authority URL).
+
+A throwaway test chain with openssl (EC P-256, test use only —
+production credentials come from a CA on the C2PA trust list):
+
+```sh
+# Certificate authority (self-signed).
+openssl ecparam -name prime256v1 -genkey -noout -out ca-key.pem
+openssl req -x509 -new -nodes -key ca-key.pem -sha256 -days 365 \
+  -subj "/CN=fliiifenleger-test-ca/O=fliiifenleger-test" \
+  -addext "basicConstraints=critical,CA:true" \
+  -addext "keyUsage=critical,keyCertSign,digitalSignature,cRLSign" \
+  -addext "subjectKeyIdentifier=hash" \
+  -addext "authorityKeyIdentifier=keyid:always" \
+  -out ca-cert.pem
+
+# End-entity certificate, signed by the CA (key converted to PKCS#8,
+# the format the signer expects).
+openssl ecparam -name prime256v1 -genkey -noout -out ee-sec1.pem
+openssl pkcs8 -topk8 -nocrypt -in ee-sec1.pem -out key.pem
+openssl req -new -key key.pem -subj "/CN=fliiifenleger-test/O=fliiifenleger-test" -out ee.csr
+printf "basicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=emailProtection\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n" > ee-ext.cnf
+openssl x509 -req -in ee.csr -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial \
+  -days 365 -sha256 -extfile ee-ext.cnf -out ee-cert.pem
+
+# Chain file: end-entity first, then CA.
+cat ee-cert.pem ca-cert.pem > chain.pem
+```
+
+Then check the result — a single tile with the standalone jar, or a
+whole endpoint with `validate --check-c2pa`:
+
+```sh
+java -jar jc2pa/target/jc2pa-*-standalone.jar validate image/jpeg <tile>.jpg
+java -jar cli/target/fliiifenleger-cli.jar validate --check-c2pa \
+  -o reassembled.jpg https://example.com/iiif/2/my-image/info.json
+```
+
+Self-signed test chains validate structurally (the manifest is present
+and parses) but not against the C2PA trust list. The
+`C2paSignWithKeysRoundTripTest` in the `jc2pa` module demonstrates the
+same flow programmatically (runtime-generated CA + end-entity,
+`signWithKeys`, read back with `C2paReader`).
+
 **Technical notes:**
 * The C2PA functionality lives in the `jc2pa` module: the Rust
   [c2pa-rs](https://github.com/contentauth/c2pa-rs) SDK is compiled to a
