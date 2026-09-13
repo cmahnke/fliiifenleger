@@ -136,6 +136,14 @@ public class C2paWasm implements Closeable {
         return memory;
     }
 
+    /**
+     * Returns the engine name (see {@link WasmEngine#name}); used for lane
+     * sizing, since some engines cap useful parallelism.
+     */
+    String engineName() {
+        return engine.name();
+    }
+
     // ── Memory management exports ─────────────────────────────────────────────
 
     /**

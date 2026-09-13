@@ -10,6 +10,7 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,12 +45,17 @@ import java.util.Map;
  *       {@code chicory}, or {@code graalvm}.</li>
  *   <li>{@code quality} — JPEG quality for the primary image re-encode
  *       (default: {@code 90}).</li>
- *   <li>{@code gainmap-quality} — JPEG quality for the gain map re-encode
- *       (default: {@code 85}).</li>
- * </ul>
+  *   <li>{@code gainmap-quality} — JPEG quality for the gain map re-encode
+  *       (default: {@code 85}).</li>
+  *   <li>{@code threads} — parallel assembly lanes (default: one per available
+  *       processor capped at 4; {@code 1} selects serial execution). Each lane pairs one
+  *       interpreter instance with its own thread;
+  *       {@code -Dwasm.lanes=N} sets the default when unset.</li>
+  * </ul>
  *
  * <p><b>Threading:</b> the {@code Tiler} generates tiles concurrently; all
- * WASM access is routed through the {@link GainMapCodec}'s dedicated thread.
+ * WASM access is routed through the {@link GainMapCodec}'s lane pool (one lane
+ * per available processor capped at 4 by default, serial with {@code threads=1}).
  */
 @AutoService(TileSink.class)
 public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable {
@@ -65,12 +71,16 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     private String engine          = null;  // null → WasmEngine auto selection
     private int    quality         = 90;
     private int    gainmapQuality  = 85;
+    private int    threads         = 0;   // 0 → fall back to -Dwasm.lanes (one lane per core by default)
 
     /** Lazily created codec; one per sink instance. */
     private GainMapCodec codec;
 
     /** Delegate sink; resolved lazily so tests can inject one. */
     private TileSink delegate;
+
+    /** Whether this sink created (and must close) the delegate. */
+    private boolean ownsDelegate = false;
 
     /** Whether this sink created (and must close) the codec. */
     private boolean ownsCodec = true;
@@ -80,9 +90,8 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     }
 
     /**
-     * Test constructor: uses the given codec and delegate.  Sharing one codec
-     * (and therefore one WASM instance) across instances is required — the
-     * ultrahdr codec keeps process-global state.
+     * Test constructor: uses the given codec and delegate.  The codec is
+     * shared (not owned).
      *
      * @param codec    The codec to use (shared ownership).
      * @param delegate The delegate sink.
@@ -112,6 +121,20 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
         }
         if (options.containsKey("gainmap-quality")) {
             this.gainmapQuality = Integer.parseInt(options.get("gainmap-quality"));
+        }
+        if (options.containsKey("threads")) {
+            try {
+                int threads = Integer.parseInt(options.get("threads").trim());
+                if (threads < 1) {
+                    throw new IllegalArgumentException(
+                        "UltraHdrTileSink option 'threads' must be at least 1, got '" + options.get("threads") + "'");
+                }
+                this.threads = threads;
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                    "UltraHdrTileSink option 'threads' must be a positive integer, got '"
+                    + options.get("threads") + "'", e);
+            }
         }
     }
 
@@ -220,9 +243,8 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     /**
-     * Releases the codec if this sink created it.  Sharing one codec (and
-     * therefore one WASM instance) across instances is required — the
-     * ultrahdr codec keeps process-global state.
+     * Releases the codec if this sink created it, then the delegate if this
+     * sink created it.  Injected (shared) instances are left alone.
      */
     @Override
     public void close() {
@@ -230,40 +252,83 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
             codec.close();
         }
         codec = null;
+        if (delegate instanceof AutoCloseable closeable && ownsDelegate) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                log.debug("Failed to close delegate sink: {}", e.getMessage());
+            }
+        }
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
     private TileSink delegate() {
         if (delegate == null) {
-            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-            if (template == null) {
-                throw new IllegalArgumentException(
-                    "Unknown delegate sink: '" + delegateName + "'");
-            }
-            try {
-                delegate = template.getClass().getConstructor().newInstance();
-                // Propagate the format option to the delegate.
-                delegate.setOptions(Map.of("format", format));
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException(
-                    "Cannot instantiate delegate sink '" + delegateName + "'", e);
+            synchronized (this) {
+                if (delegate == null) {
+                    delegate = createDelegate();
+                }
             }
         }
         return delegate;
     }
 
+    private TileSink createDelegate() {
+        TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
+        if (template == null) {
+            throw new IllegalArgumentException(
+                "Unknown delegate sink: '" + delegateName + "'");
+        }
+        try {
+            TileSink created = template.getClass().getConstructor().newInstance();
+            // Propagate the format option to the delegate.
+            created.setOptions(Map.of("format", format));
+            ownsDelegate = true;
+            return created;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                "Cannot instantiate delegate sink '" + delegateName + "'", e);
+        }
+    }
+
     private GainMapCodec codec() throws TileSinkException {
         if (codec == null) {
-            try {
-                codec = GainMapCodec.shared(engine);
-                ownsCodec = false;
-            } catch (IOException e) {
-                throw new TileSinkException("Cannot initialise the UltraHDR codec: "
-                                            + e.getMessage(), e);
+            synchronized (this) {
+                if (codec == null) {
+                    codec = createCodec();
+                }
             }
         }
         return codec;
+    }
+
+    private int effectiveParallelism() {
+        if (threads > 0) {
+            return WasmEngine.resolveParallelism(threads, engine);
+        }
+        return WasmEngine.systemParallelism(engine);
+    }
+
+    /**
+     * A single lane reuses the JVM-wide shared codec; parallel lanes get a
+     * privately owned pooled codec that {@link #close()} shuts down.
+     */
+    private GainMapCodec createCodec() throws TileSinkException {
+        try {
+            int parallelism = effectiveParallelism();
+            if (parallelism <= 1) {
+                GainMapCodec shared = GainMapCodec.shared(engine);
+                ownsCodec = false;
+                return shared;
+            }
+            GainMapCodec pooled = new GainMapCodec(engine, parallelism);
+            ownsCodec = true;
+            return pooled;
+        } catch (IOException e) {
+            throw new TileSinkException("Cannot initialise the UltraHDR codec: "
+                                        + e.getMessage(), e);
+        }
     }
 
     private static BufferedImage imageMeta(Map<String, Object> metadata, String key) {

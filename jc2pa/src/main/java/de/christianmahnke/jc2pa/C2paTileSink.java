@@ -55,17 +55,22 @@ import java.util.Map;
  *       {@code fliiifenleger}).  Ephemeral signatures are for testing only.</li>
  *   <li>{@code claim-generator} — claim generator string written into the
  *       manifest.</li>
- *   <li>{@code trust-anchor} — absolute URI advertised as {@code trustAnchor}
- *       in the {@code https://christianmahnke.de/iiif/c2pa/} service entry of
- *       a V3 {@code info.json}. Requires {@code --iiif-version V3}; fails with
- *       Image API 2 since V2 offers no place for namespaced options.</li>
- * </ul>
+  *   <li>{@code trust-anchor} — absolute URI advertised as {@code trustAnchor}
+  *       in the {@code https://christianmahnke.de/iiif/c2pa/} service entry of
+  *       a V3 {@code info.json}. Requires {@code --iiif-version V3}; fails with
+  *       Image API 2 since V2 offers no place for namespaced options.</li>
+  *   <li>{@code threads} — parallel signing lanes (default: one per available
+  *       processor capped at 4; {@code 1} selects serial execution). Each lane pairs one
+  *       interpreter instance with its own thread;
+  *       {@code -Dwasm.lanes=N} sets the default when unset.</li>
+  * </ul>
  *
  * <p><b>info.json:</b> always advertises {@code https://christianmahnke.de/iiif/c2pa/}
  * (V3 service + {@code extraFeatures}, V2 {@code supports} entry).
  *
- * <p><b>Threading:</b> the {@code Tiler} generates tiles concurrently; all
- * WASM access is routed through the {@link TileSigner}'s dedicated thread.
+  * <p><b>Threading:</b> the {@code Tiler} generates tiles concurrently; all
+  * WASM access is routed through the {@link TileSigner}'s lane pool (one lane
+  * per available processor capped at 4 by default, serial with {@code threads=1}).
  *
  * <p><b>Note:</b> c2pa-rs keeps process-global state — do not run multiple
  * C2PA sinks (or other {@code C2paWasm} users) in the same JVM.
@@ -91,6 +96,7 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     private String certName       = "fliiifenleger";
     private String claimGenerator = DEFAULT_CLAIM_GENERATOR;
     private String trustAnchor     = null;
+    private int    threads         = 0;   // 0 → fall back to -Dwasm.lanes (one lane per core by default)
 
     /** Lazily created signer; one per sink instance. */
     private TileSigner signer;
@@ -100,6 +106,9 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
 
     /** Delegate sink; resolved lazily so tests can inject one. */
     private TileSink delegate;
+
+    /** Whether this sink created (and must close) the delegate. */
+    private boolean ownsDelegate = false;
 
     // ── Configuration ─────────────────────────────────────────────────────────
 
@@ -132,6 +141,20 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
         }
         if (options.containsKey("claim-generator")) {
             this.claimGenerator = options.get("claim-generator");
+        }
+        if (options.containsKey("threads")) {
+            try {
+                int threads = Integer.parseInt(options.get("threads").trim());
+                if (threads < 1) {
+                    throw new IllegalArgumentException(
+                        "C2paTileSink option 'threads' must be at least 1, got '" + options.get("threads") + "'");
+                }
+                this.threads = threads;
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                    "C2paTileSink option 'threads' must be a positive integer, got '"
+                    + options.get("threads") + "'", e);
+            }
         }
         if (options.containsKey("trust-anchor")) {
             String value = options.get("trust-anchor");
@@ -246,9 +269,9 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     // ── Test support ──────────────────────────────────────────────────────────
 
     /**
-     * Test constructor: uses the given signer and delegate.  Sharing one
-     * signer across instances is required — c2pa-rs keeps process-global
-     * state, so only one live WASM instance may exist per JVM.
+     * Test constructor: uses the given signer and delegate.  The signer is
+     * shared (not owned): serial use, or a signer whose own lane pool was
+     * sized for the test.
      *
      * @param signer   The signer to use (shared ownership).
      * @param delegate The delegate sink.
@@ -291,40 +314,65 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
 
     private TileSink delegate() {
         if (delegate == null) {
-            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-            if (template == null) {
-                throw new IllegalArgumentException(
-                    "Unknown delegate sink: '" + delegateName + "'");
-            }
-            try {
-                delegate = template.getClass().getConstructor().newInstance();
-                // Propagate the format option to the delegate.
-                delegate.setOptions(Map.of("format", format));
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException(
-                    "Cannot instantiate delegate sink '" + delegateName + "'", e);
+            synchronized (this) {
+                if (delegate == null) {
+                    delegate = createDelegate();
+                }
             }
         }
         return delegate;
     }
 
+    private TileSink createDelegate() {
+        TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
+        if (template == null) {
+            throw new IllegalArgumentException(
+                "Unknown delegate sink: '" + delegateName + "'");
+        }
+        try {
+            TileSink created = template.getClass().getConstructor().newInstance();
+            // Propagate the format option to the delegate.
+            created.setOptions(Map.of("format", format));
+            ownsDelegate = true;
+            return created;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                "Cannot instantiate delegate sink '" + delegateName + "'", e);
+        }
+    }
+
     private TileSigner signer() throws TileSinkException {
         if (signer == null) {
-            try {
-                signer = new TileSigner(engine);
-                ownsSigner = true;
-            } catch (IOException e) {
-                throw new TileSinkException("Cannot initialise the C2PA signer: "
-                                            + e.getMessage(), e);
+            synchronized (this) {
+                if (signer == null) {
+                    signer = createSigner();
+                }
             }
         }
         return signer;
     }
 
+    private int effectiveParallelism() {
+        if (threads > 0) {
+            return WasmEngine.resolveParallelism(threads, engine);
+        }
+        return WasmEngine.systemParallelism(engine);
+    }
+
+    private TileSigner createSigner() throws TileSinkException {
+        try {
+            TileSigner created = new TileSigner(engine, effectiveParallelism());
+            ownsSigner = true;
+            return created;
+        } catch (IOException e) {
+            throw new TileSinkException("Cannot initialise the C2PA signer: "
+                                        + e.getMessage(), e);
+        }
+    }
+
     /**
-     * Releases the signer if this sink created it.  Sharing one signer (and
-     * therefore one WASM instance) across instances is required — c2pa-rs
-     * keeps process-global state.
+     * Releases the signer if this sink created it, then the delegate if this
+     * sink created it.  Injected (shared) instances are left alone.
      */
     @Override
     public void close() {
@@ -332,6 +380,13 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
             signer.close();
         }
         signer = null;
+        if (delegate instanceof AutoCloseable closeable && ownsDelegate) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                log.debug("Failed to close delegate sink: {}", e.getMessage());
+            }
+        }
     }
 
     private byte[] certPem() throws TileSinkException {

@@ -40,6 +40,18 @@ public class Tiler {
     private final int defaultTileSize;
     private final ImageInfo.IIIFVersion defaultIiifVersion;
 
+    /**
+     * System property for the tile-generation worker count.  Honoured when no
+     * explicit count was set via {@link #setTileWorkers}.
+     */
+    public static final String WORKERS_PROPERTY = "tiler.workers";
+
+    /**
+     * Tile-generation worker count ({@code 0} = automatic: system property,
+     * else available processors).
+     */
+    private int tileWorkers = 0;
+
     protected static Map<String, ImageSource> loadSources() {
         Map<String, ImageSource> sources = new ConcurrentHashMap<>();
         ServiceLoader.load(ImageSource.class).forEach(source -> {
@@ -83,6 +95,48 @@ public class Tiler {
     public Tiler(int defaultTileSize, ImageInfo.IIIFVersion defaultIiifVersion) {
         this.defaultTileSize = defaultTileSize;
         this.defaultIiifVersion = defaultIiifVersion;
+    }
+
+    /**
+     * Sets the tile-generation worker count for subsequent
+     * {@code createImage(s)} calls on this instance.
+     *
+     * @param workers Worker threads; {@code 0} selects automatic sizing
+     *                ({@code -Dtiler.workers}, else available processors).
+     * @throws IllegalArgumentException if {@code workers} is negative.
+     */
+    public void setTileWorkers(int workers) {
+        if (workers < 0) {
+            throw new IllegalArgumentException(
+                "Tile worker count must be >= 0 (0 = automatic), got " + workers);
+        }
+        this.tileWorkers = workers;
+    }
+
+    /**
+     * @return The effective tile-generation worker count.
+     */
+    public int getTileWorkers() {
+        if (tileWorkers > 0) {
+            return tileWorkers;
+        }
+        String raw = System.getProperty(WORKERS_PROPERTY);
+        if (raw != null && !raw.isBlank()) {
+            try {
+                int configured = Integer.parseInt(raw.trim());
+                if (configured < 1) {
+                    throw new IllegalArgumentException(
+                        "Invalid -D" + WORKERS_PROPERTY + " value '" + raw
+                        + "': expected a positive integer");
+                }
+                return configured;
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(
+                    "Invalid -D" + WORKERS_PROPERTY + " value '" + raw
+                    + "': expected a positive integer", e);
+            }
+        }
+        return Runtime.getRuntime().availableProcessors();
     }
 
     public void createImages(
@@ -288,9 +342,9 @@ public class Tiler {
         System.out.println("Generating tiles in: " + imageBaseDir);
         
         // Use a fixed thread pool to control parallelism
-        int coreCount = Runtime.getRuntime().availableProcessors();
-        ExecutorService executor = Executors.newFixedThreadPool(coreCount);
-        log.info("Using a thread pool with {} workers for tile generation.", coreCount);
+        int workers = getTileWorkers();
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+        log.info("Using a thread pool with {} workers for tile generation.", workers);
         
         try {
             List<Future<?>> futures = new java.util.ArrayList<>();
@@ -341,25 +395,28 @@ public class Tiler {
 
     private void generateScaleTiles(ImageInfo imageInfo, Path imageDir, ImageInfo.IIIFVersion version, TileSink sink, ExecutorService executor, List<Future<?>> futures) {
         for (int scale : imageInfo.getScaleFactors()) {
-            futures.add(executor.submit(() -> {
-                try {
-                    double scaleLevelWidth = (double) imageInfo.getImage().getWidth() / scale;
-                    double scaleLevelHeight = (double) imageInfo.getImage().getHeight() / scale;
+            double scaleLevelWidth = (double) imageInfo.getImage().getWidth() / scale;
+            double scaleLevelHeight = (double) imageInfo.getImage().getHeight() / scale;
 
-                    int tileNumWidth = (int) Math.ceil(scaleLevelWidth / imageInfo.getTileWidth());
-                    int tileNumHeight = (int) Math.ceil(scaleLevelHeight / imageInfo.getTileHeight());
+            int tileNumWidth = (int) Math.ceil(scaleLevelWidth / imageInfo.getTileWidth());
+            int tileNumHeight = (int) Math.ceil(scaleLevelHeight / imageInfo.getTileHeight());
 
-                    for (int x = 0; x < tileNumWidth; x++) {
-                        for (int y = 0; y < tileNumHeight; y++) {
-                            int tileX = x * imageInfo.getTileWidth() * scale;
-                            int tileY = y * imageInfo.getTileHeight() * scale;
+            // One task per tile (not per scale level): tiles vary wildly in
+            // cost (kilobyte thumbnails vs. multi-megabyte full-size tiles),
+            // and coarse tasks leave workers idle behind a straggler level.
+            for (int x = 0; x < tileNumWidth; x++) {
+                for (int y = 0; y < tileNumHeight; y++) {
+                    final int tileX = x * imageInfo.getTileWidth() * scale;
+                    final int tileY = y * imageInfo.getTileHeight() * scale;
 
-                            int scaledTileWidth = Math.min(imageInfo.getTileWidth() * scale, imageInfo.getImage().getWidth() - tileX);
-                            int scaledTileHeight = Math.min(imageInfo.getTileHeight() * scale, imageInfo.getImage().getHeight() - tileY);
+                    final int scaledTileWidth = Math.min(imageInfo.getTileWidth() * scale, imageInfo.getImage().getWidth() - tileX);
+                    final int scaledTileHeight = Math.min(imageInfo.getTileHeight() * scale, imageInfo.getImage().getHeight() - tileY);
 
-                            int tiledWidthCalc = (int) Math.ceil((double) scaledTileWidth / scale);
-                            int tiledHeightCalc = (int) Math.ceil((double) scaledTileHeight / scale);
+                    final int tiledWidthCalc = (int) Math.ceil((double) scaledTileWidth / scale);
+                    final int tiledHeightCalc = (int) Math.ceil((double) scaledTileHeight / scale);
 
+                    futures.add(executor.submit(() -> {
+                        try {
                             String url = (version == ImageInfo.IIIFVersion.V3) ? String.format("%d,%d,%d,%d/%d,%d/0/default.%s", tileX, tileY, scaledTileWidth, scaledTileHeight, tiledWidthCalc, tiledHeightCalc, sink.getFormatExtension()) : String.format("%d,%d,%d,%d/%d/0/default.%s", tileX, tileY, scaledTileWidth, scaledTileHeight, tiledWidthCalc, sink.getFormatExtension());
 
                             Path outputFile = imageDir.resolve(url);
@@ -371,12 +428,14 @@ public class Tiler {
                                 Map<String, Object> meta = enrichMetadata(imageInfo, tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
                                 sink.saveTile(os, tileImg, meta);
                             }
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to generate tile "
+                                + tileX + "," + tileY + "," + scaledTileWidth + "," + scaledTileHeight
+                                + " at scale " + scale, e);
                         }
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to generate tiles for scale " + scale, e);
+                    }));
                 }
-            }));
+            }
         }
     }
 

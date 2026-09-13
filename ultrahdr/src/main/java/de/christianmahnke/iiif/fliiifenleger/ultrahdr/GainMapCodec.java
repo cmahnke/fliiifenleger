@@ -4,50 +4,50 @@
 // src/main/java/de/christianmahnke/iiif/fliiifenleger/ultrahdr/GainMapCodec.java
 package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmLanePool;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
 
 import java.io.IOException;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Function;
 
 /**
  * Splits UltraHDR JPEGs into primary/gain map parts and re-assembles tiles
  * with integrated gain maps.
  *
- * <p>The service owns a single dedicated codec thread on which ALL WASM
- * access happens — the WASM interpreter keeps thread-affine state, so calls
- * from different host threads (even when serialized by a lock) can corrupt
- * the instance (see the jc2pa TileSigner for the rationale).  Concurrent
- * callers are queued and their results awaited.
+ * <p>WASM instances are neither thread-safe nor allowed to hop host threads,
+ * so every lane of the internal pool pairs one interpreter instance with one
+ * dedicated worker thread that lazily creates it and never shares it.
+ * Separate instances are fully isolated (each owns its linear memory), which
+ * is what makes parallel execution sound.  Tasks are routed round-robin
+ * across lanes; concurrent callers block for their own result.
  *
- * <p><b>Important:</b> the ultrahdr codec keeps process-global state — only
- * ONE live WASM instance of this module may exist per JVM (instances of the
- * c2pa and ultrahdr modules coexist fine; duplicates of the same module do
- * not).
+ * <p>Parallelism defaults to one lane per available processor capped at 4
+ * (opt out with parallelism {@code 1}); a single lane behaves exactly like
+ * the previous dedicated codec thread.  Request more or fewer lanes with
+ * {@link #GainMapCodec(String, int)} (or {@code --sink-opt threads=N} on the
+ * {@code ultrahdr} sink); the shared instance from {@link #shared} and
+ * externally shared {@link UltraHdrWasm} instances are always serial.
+ *
+ * <p><b>Important:</b> the shared instance is process-wide — pipeline classes
+ * ({@link UltraHdrImageSource}, {@link UltraHdrTileSink}) share it; it is
+ * never closed by them (JVM-lifetime).
  */
 public final class GainMapCodec implements AutoCloseable {
 
     /**
-     * Process-wide shared codec instance.
+     * Process-wide shared codec instance (serial, JVM-lifetime).
      *
-     * <p>The ultrahdr codec keeps process-global state — only ONE live
-     * instance of the WASM module may exist per JVM.  The pipeline classes
-     * ({@link UltraHdrImageSource}, {@link UltraHdrTileSink}) share this
-     * instance; it is never closed by them (JVM-lifetime).
+     * <p>The pipeline classes ({@link UltraHdrImageSource},
+     * {@link UltraHdrTileSink}) share this instance; it is never closed by
+     * them (JVM-lifetime).
      */
     private static volatile GainMapCodec sharedInstance;
 
-    /** The WASM module instance backing this codec. */
-    private final UltraHdrWasm wasm;
-
-    /** Whether this service owns (and must close) the WASM instance. */
-    private final boolean ownsWasm;
-
-    /** Dedicated thread for all WASM access. */
-    private final ExecutorService wasmExecutor;
+    /** Lane pool: one interpreter instance per worker thread. */
+    private final WasmLanePool<UltraHdrWasm> lanes;
 
     private volatile boolean closed = false;
 
@@ -71,8 +71,9 @@ public final class GainMapCodec implements AutoCloseable {
     // ── Construction ──────────────────────────────────────────────────────────
 
     /**
-     * Create a codec that owns its WASM instance, using the engine selected
-     * by {@code engineSelection}.
+     * Create a codec that owns its WASM instance(s), using the engine selected
+     * by {@code engineSelection}.  Uses a single lane; the sinks resolve the
+     * core-based default separately.
      *
      * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
      *                        or {@code null} for the {@code wasm.engine}
@@ -80,9 +81,35 @@ public final class GainMapCodec implements AutoCloseable {
      * @throws IOException if the WASM module cannot be loaded.
      */
     public GainMapCodec(String engineSelection) throws IOException {
-        this.wasm = new UltraHdrWasm(UltraHdrWasm.fromClasspathBytes(), engineSelection);
-        this.ownsWasm = true;
-        this.wasmExecutor = newExecutor();
+        this(engineSelection, 1);
+    }
+
+    /**
+     * Create a codec that owns its WASM instance(s), with the given lane
+     * parallelism.  {@code 1} selects the classic serial behaviour; larger
+     * values assemble on that many lanes in parallel.
+     *
+     * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
+     *                        or {@code null} for the {@code wasm.engine}
+     *                        system property / {@code auto}.
+     * @param parallelism     Requested lane count; clamped to the available
+     *                        processors (and to 2 for GraalWasm).
+     * @throws IOException if the WASM module cannot be loaded.
+     * @throws IllegalArgumentException if {@code parallelism < 1}.
+     */
+    public GainMapCodec(String engineSelection, int parallelism) throws IOException {
+        this(UltraHdrWasm.fromClasspathBytes(), engineSelection, parallelism, true);
+    }
+
+    /**
+     * Create a codec sharing an existing WASM instance.  The caller keeps
+     * ownership of the instance.  A shared instance is always serial
+     * (parallelism 1).
+     *
+     * @param wasm Shared {@link UltraHdrWasm} instance.
+     */
+    public GainMapCodec(UltraHdrWasm wasm) {
+        this(wasm, 1);
     }
 
     /**
@@ -90,19 +117,31 @@ public final class GainMapCodec implements AutoCloseable {
      * ownership of the instance.
      *
      * @param wasm Shared {@link UltraHdrWasm} instance.
+     * @param parallelism Must be 1 — a shared instance cannot run on
+     *                    parallel lanes.
+     * @throws IllegalArgumentException if {@code parallelism != 1}.
      */
-    public GainMapCodec(UltraHdrWasm wasm) {
-        this.wasm = wasm;
-        this.ownsWasm = false;
-        this.wasmExecutor = newExecutor();
+    GainMapCodec(UltraHdrWasm wasm, int parallelism) {
+        if (parallelism != 1) {
+            throw new IllegalArgumentException(
+                "A shared UltraHdrWasm instance supports only parallelism 1, got " + parallelism);
+        }
+        final UltraHdrWasm shared = wasm;
+        this.lanes = new WasmLanePool<>("ultrahdr-codec", 1, () -> shared, false);
     }
 
-    private static ExecutorService newExecutor() {
-        return Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "ultrahdr-codec");
-            t.setDaemon(true);
-            return t;
-        });
+    private GainMapCodec(byte[] wasmBytes, String engineSelection, int parallelism, boolean owned)
+            throws IOException {
+        int lanes = WasmEngine.resolveParallelism(parallelism, engineSelection);
+        this.lanes = new WasmLanePool<>("ultrahdr-codec", lanes,
+            () -> new UltraHdrWasm(wasmBytes, engineSelection), owned);
+        // Fail fast on unloadable modules, as the old constructor did.
+        this.lanes.initEagerly();
+    }
+
+    /** @return The configured lane count (for tests). */
+    int laneCount() {
+        return lanes.laneCount();
     }
 
     // ── Results ───────────────────────────────────────────────────────────────
@@ -128,7 +167,7 @@ public final class GainMapCodec implements AutoCloseable {
      * @throws IllegalStateException if this codec has been closed.
      */
     public UhdrSplit decode(byte[] uhdrJpeg) throws UltraHdrException {
-        return submit(() -> {
+        return submit(wasm -> {
             WasmMemory mem = wasm.memory();
 
             int dataPtr    = mem.allocBytes(uhdrJpeg);
@@ -146,12 +185,12 @@ public final class GainMapCodec implements AutoCloseable {
             // checkError frees the error slots of the call it inspects —
             // every WASM call therefore allocates FRESH slots (reusing a
             // freed slot is a double free that corrupts the module heap).
-            checkError(handle, errPtrSlot, errLenSlot);
+            checkError(wasm, handle, errPtrSlot, errLenSlot);
 
             try {
-                byte[] primary  = readBlob(wasm::uhdrDecodePrimary, handle);
-                byte[] gainmap  = readBlob(wasm::uhdrDecodeGainmap, handle);
-                String metadata = readString(wasm::uhdrDecodeMetadata, handle);
+                byte[] primary  = readBlob(wasm, wasm::uhdrDecodePrimary, handle);
+                byte[] gainmap  = readBlob(wasm, wasm::uhdrDecodeGainmap, handle);
+                String metadata = readString(wasm, wasm::uhdrDecodeMetadata, handle);
                 return new UhdrSplit(primary, gainmap, metadata);
             } finally {
                 wasm.uhdrDecodeFree(handle);
@@ -175,7 +214,7 @@ public final class GainMapCodec implements AutoCloseable {
      */
     public byte[] encode(byte[] primaryJpeg, byte[] gainmapJpeg, String metadataJson,
                          int baseQuality, int gainmapQuality) throws UltraHdrException {
-        return submit(() -> {
+        return submit(wasm -> {
             WasmMemory mem = wasm.memory();
 
             int primaryPtr  = mem.allocBytes(primaryJpeg);
@@ -202,7 +241,7 @@ public final class GainMapCodec implements AutoCloseable {
                 wasm.engine().free(metadataPtr, metadataLen);
             }
 
-            checkError(resultPtr, errPtrSlot, errLenSlot);
+            checkError(wasm, resultPtr, errPtrSlot, errLenSlot);
 
             int len    = mem.readU32(outLenSlot);
             byte[] out = mem.readBytes(resultPtr, len);
@@ -218,7 +257,7 @@ public final class GainMapCodec implements AutoCloseable {
      * @throws IllegalStateException if this codec has been closed.
      */
     public String version() throws UltraHdrException {
-        return submit(() -> {
+        return submit(wasm -> {
             WasmMemory mem = wasm.memory();
             int outLenSlot = mem.allocU32Slot();
             int ptr        = wasm.uhdrVersion(outLenSlot);
@@ -238,13 +277,13 @@ public final class GainMapCodec implements AutoCloseable {
     }
 
     /** Reads a blob (JPEG bytes) from a decode handle. */
-    private byte[] readBlob(BlobFn fn, int handle) {
+    private byte[] readBlob(UltraHdrWasm wasm, BlobFn fn, int handle) {
         WasmMemory mem = wasm.memory();
         int outLenSlot = mem.allocU32Slot();
         int errPtrSlot = mem.allocPtrSlot();
         int errLenSlot = mem.allocU32Slot();
         int resultPtr  = fn.call(handle, outLenSlot, errPtrSlot, errLenSlot);
-        checkError(resultPtr, errPtrSlot, errLenSlot);
+        checkError(wasm, resultPtr, errPtrSlot, errLenSlot);
         int len    = mem.readU32(outLenSlot);
         byte[] out = mem.readBytes(resultPtr, len);
         wasm.engine().free(resultPtr, len);
@@ -253,13 +292,13 @@ public final class GainMapCodec implements AutoCloseable {
     }
 
     /** Reads a UTF-8 string from a decode handle. */
-    private String readString(BlobFn fn, int handle) {
+    private String readString(UltraHdrWasm wasm, BlobFn fn, int handle) {
         WasmMemory mem = wasm.memory();
         int outLenSlot = mem.allocU32Slot();
         int errPtrSlot = mem.allocPtrSlot();
         int errLenSlot = mem.allocU32Slot();
         int resultPtr  = fn.call(handle, outLenSlot, errPtrSlot, errLenSlot);
-        checkError(resultPtr, errPtrSlot, errLenSlot);
+        checkError(wasm, resultPtr, errPtrSlot, errLenSlot);
         int len    = mem.readU32(outLenSlot);
         String out = mem.readString(resultPtr, len);
         wasm.engine().free(resultPtr, len);
@@ -268,7 +307,7 @@ public final class GainMapCodec implements AutoCloseable {
     }
 
     /** The {@code 0 = failure} convention check shared by all exports. */
-    private void checkError(int result, int errPtrSlot, int errLenSlot) {
+    private void checkError(UltraHdrWasm wasm, int result, int errPtrSlot, int errLenSlot) {
         WasmMemory mem = wasm.memory();
         if (result == 0) {
             int errBufPtr = mem.readPtr(errPtrSlot);
@@ -286,12 +325,12 @@ public final class GainMapCodec implements AutoCloseable {
         wasm.engine().free(errLenSlot, 4);
     }
 
-    /** Submit a WASM operation to the dedicated codec thread and await it. */
-    private <T> T submit(Callable<T> operation) throws UltraHdrException {
+    /** Runs a codec operation on a pool lane with that lane's instance and awaits it. */
+    private <T> T submit(Function<UltraHdrWasm, T> operation) throws UltraHdrException {
         if (closed) {
             throw new IllegalStateException("GainMapCodec has been closed");
         }
-        Future<T> future = wasmExecutor.submit(operation);
+        Future<T> future = lanes.submit(operation::apply);
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -320,9 +359,6 @@ public final class GainMapCodec implements AutoCloseable {
             return;
         }
         closed = true;
-        wasmExecutor.shutdown();
-        if (ownsWasm) {
-            wasm.close();
-        }
+        lanes.close();
     }
 }

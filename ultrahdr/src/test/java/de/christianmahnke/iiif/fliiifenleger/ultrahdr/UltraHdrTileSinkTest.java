@@ -199,6 +199,17 @@ class UltraHdrTileSinkTest {
         assertThat(Tiler.SINK_REGISTRY).containsKey("ultrahdr");
     }
 
+    @Test
+    @DisplayName("setOptions rejects invalid threads values")
+    void setOptionsInvalidThreadsThrows() {
+        for (String bad : new String[]{"0", "-1", "many"}) {
+            UltraHdrTileSink sink = new UltraHdrTileSink();
+            assertThatThrownBy(() -> sink.setOptions(Map.of("threads", bad)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("threads");
+        }
+    }
+
     // ── End-to-end with the Tiler ─────────────────────────────────────────────
 
     @Test
@@ -232,6 +243,38 @@ class UltraHdrTileSinkTest {
             assertThat(validated).isGreaterThanOrEqualTo(4);
         } finally {
             // The shared codec stays open until tearDown.
+        }
+    }
+
+    @Test
+    @DisplayName("Tiler end-to-end with threads=4: every tile carries a gain map")
+    void tilerEndToEndParallelCarriesGainMaps(@TempDir Path tempDir) throws Exception {
+        Path sourceFile = tempDir.resolve("source.jpg");
+        Files.write(sourceFile, uhdrSource);
+
+        UltraHdrTileSink sink = new UltraHdrTileSink();
+        sink.setOptions(Map.of("format", "jpg", "threads", "4"));
+        try {
+            UltraHdrImageSource imageSource = new UltraHdrImageSource();
+            imageSource.load(sourceFile.toUri().toURL());
+
+            Tiler tiler = new Tiler(32, ImageInfo.IIIFVersion.V2);
+            tiler.createImages(imageSource, List.of(sourceFile), tempDir.resolve("iiif"),
+                               "http://localhost:8887/iiif/", 1, sink);
+
+            int validated = 0;
+            try (Stream<Path> tiles = Files.walk(tempDir.resolve("iiif"))) {
+                for (Path tile : (Iterable<Path>) tiles.filter(p -> p.toString().endsWith(".jpg"))::iterator) {
+                    byte[] bytes = Files.readAllBytes(tile);
+                    GainMapCodec.UhdrSplit split = codec.decode(bytes);
+                    assertThat(split.gainmapJpeg()).isNotEmpty();
+                    assertThat(split.metadataJson()).contains("alternateHdrHeadroom");
+                    validated++;
+                }
+            }
+            assertThat(validated).isGreaterThanOrEqualTo(4);
+        } finally {
+            sink.close();
         }
     }
 

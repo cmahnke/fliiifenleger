@@ -5,24 +5,30 @@
 package de.christianmahnke.jc2pa;
 
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmLanePool;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Function;
 
 /**
  * Signs IIIF tiles (or any image bytes) with C2PA manifests.
  *
- * <p>The service owns a single dedicated signing thread on which ALL WASM
- * access happens.  WASM execution is single-threaded, and the interpreter
- * keeps thread-affine state, so calls from different host threads — even
- * when serialized by a lock — can corrupt the instance.  Routing every
- * operation through one thread avoids this entirely; concurrent callers are
- * queued and their results awaited.
+ * <p>WASM instances are neither thread-safe nor allowed to hop host threads,
+ * so every lane of the internal pool pairs one interpreter instance with one
+ * dedicated worker thread that lazily creates it and never shares it.
+ * Separate instances are fully isolated (each owns its linear memory), which
+ * is what makes parallel signing sound.  Tasks are routed round-robin across
+ * lanes; concurrent callers block for their own result.
+ *
+ * <p>Parallelism defaults to one lane per available processor capped at 4
+ * (opt out with parallelism {@code 1}); a single lane behaves exactly like
+ * the previous dedicated signing thread.  Request more or fewer lanes with
+ * {@link #TileSigner(String, int)} (or {@code --sink-opt threads=N} on the
+ * {@code c2pa} sink); a shared {@link C2paWasm} instance always implies a
+ * single lane.
  *
  * <p>Two signing modes exist:
  * <ul>
@@ -38,22 +44,14 @@ import java.util.concurrent.Future;
  */
 public final class TileSigner implements AutoCloseable {
 
-    private final C2paWasm wasm;
-
-    /** Whether this service owns (and must close) the WASM instance. */
-    private final boolean ownsWasm;
-
-    /**
-     * Dedicated thread for all WASM access — see the class documentation for
-     * why calls must not hop between host threads.
-     */
-    private final ExecutorService wasmExecutor;
+    private final WasmLanePool<C2paWasm> lanes;
 
     private volatile boolean closed = false;
 
     /**
-     * Create a signer that owns its WASM instance, using the engine selected
-     * by {@code engineSelection} (see {@link WasmEngine#create}).
+     * Create a signer that owns its WASM instance(s), using the engine selected
+     * by {@code engineSelection} (see {@link WasmEngine#create}).  Uses a
+     * single lane; the sinks resolve the core-based default separately.
      *
      * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
      *                        or {@code null} for the {@code wasm.engine}
@@ -61,7 +59,35 @@ public final class TileSigner implements AutoCloseable {
      * @throws IOException if the WASM module cannot be loaded.
      */
     public TileSigner(String engineSelection) throws IOException {
-        this(new C2paWasm(resolveWasmBytes(), engineSelection), true);
+        this(engineSelection, 1);
+    }
+
+    /**
+     * Create a signer that owns its WASM instance(s), with the given lane
+     * parallelism.  {@code 1} selects the classic serial behaviour; larger
+     * values sign on that many lanes in parallel.
+     *
+     * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
+     *                        or {@code null} for the {@code wasm.engine}
+     *                        system property / {@code auto}.
+     * @param parallelism     Requested lane count; clamped to the available
+     *                        processors (and to 2 for GraalWasm).
+     * @throws IOException if the WASM module cannot be loaded.
+     * @throws IllegalArgumentException if {@code parallelism < 1}.
+     */
+    public TileSigner(String engineSelection, int parallelism) throws IOException {
+        this(resolveWasmBytes(), engineSelection, parallelism, true);
+    }
+
+    /**
+     * Create a signer sharing an existing WASM instance.  The caller keeps
+     * ownership of the instance.  A shared instance is always serial
+     * (parallelism 1).
+     *
+     * @param wasm Shared {@link C2paWasm} instance.
+     */
+    public TileSigner(C2paWasm wasm) {
+        this(wasm, 1);
     }
 
     /**
@@ -69,19 +95,31 @@ public final class TileSigner implements AutoCloseable {
      * ownership of the instance.
      *
      * @param wasm Shared {@link C2paWasm} instance.
+     * @param parallelism Must be 1 — a shared instance cannot run on
+     *                    parallel lanes.
+     * @throws IllegalArgumentException if {@code parallelism != 1}.
      */
-    public TileSigner(C2paWasm wasm) {
-        this(wasm, false);
+    TileSigner(C2paWasm wasm, int parallelism) {
+        if (parallelism != 1) {
+            throw new IllegalArgumentException(
+                "A shared C2paWasm instance supports only parallelism 1, got " + parallelism);
+        }
+        final C2paWasm shared = wasm;
+        this.lanes = new WasmLanePool<>("jc2pa-signer", 1, () -> shared, false);
     }
 
-    private TileSigner(C2paWasm wasm, boolean ownsWasm) {
-        this.wasm     = wasm;
-        this.ownsWasm = ownsWasm;
-        this.wasmExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "jc2pa-signer");
-            t.setDaemon(true);
-            return t;
-        });
+    private TileSigner(byte[] wasmBytes, String engineSelection, int parallelism, boolean owned)
+            throws IOException {
+        int lanes = WasmEngine.resolveParallelism(parallelism, engineSelection);
+        this.lanes = new WasmLanePool<>("jc2pa-signer", lanes,
+            () -> new C2paWasm(wasmBytes, engineSelection), owned);
+        // Fail fast on unloadable modules, as the old constructor did.
+        this.lanes.initEagerly();
+    }
+
+    /** @return The configured lane count (for tests). */
+    int laneCount() {
+        return lanes.laneCount();
     }
 
     /**
@@ -98,7 +136,7 @@ public final class TileSigner implements AutoCloseable {
     public byte[] signEphemeral(byte[] tileBytes, String format,
                                 String manifestJson, String certName)
             throws C2paException {
-        return submit(() -> {
+        return submit(wasm -> {
             try (C2paBuilder builder = new C2paBuilder(wasm, manifestJson)) {
                 return builder.signEphemeral(format, tileBytes, certName);
             }
@@ -124,7 +162,7 @@ public final class TileSigner implements AutoCloseable {
                        byte[] certPem, byte[] keyPem,
                        String alg, String tsaUrl)
             throws C2paException {
-        return submit(() -> {
+        return submit(wasm -> {
             try (C2paBuilder builder = new C2paBuilder(wasm, manifestJson)) {
                 return builder.signWithKeys(format, tileBytes, certPem, keyPem,
                                             alg, tsaUrl);
@@ -146,7 +184,7 @@ public final class TileSigner implements AutoCloseable {
      */
     public String activeLabel(byte[] assetBytes, String format)
             throws C2paException {
-        return submitRead(() -> {
+        return submitRead(wasm -> {
             try (C2paReader reader = C2paReader.fromBytes(wasm, format, assetBytes)) {
                 return reader.activeLabel();
             }
@@ -166,7 +204,7 @@ public final class TileSigner implements AutoCloseable {
      */
     public String manifestJson(byte[] assetBytes, String format)
             throws C2paException {
-        return submitRead(() -> {
+        return submitRead(wasm -> {
             try (C2paReader reader = C2paReader.fromBytes(wasm, format, assetBytes)) {
                 return reader.json();
             }
@@ -187,7 +225,7 @@ public final class TileSigner implements AutoCloseable {
      */
     public String validationResultsJson(byte[] assetBytes, String format)
             throws C2paException {
-        return submitRead(() -> {
+        return submitRead(wasm -> {
             try (C2paReader reader = C2paReader.fromBytes(wasm, format, assetBytes)) {
                 return reader.validationResultsJson();
             }
@@ -197,17 +235,17 @@ public final class TileSigner implements AutoCloseable {
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /**
-     * Submit a WASM operation to the dedicated signer thread and block for
-     * the result.
+     * Runs a WASM operation on a pool lane with that lane's instance and
+     * blocks for the result.
      *
      * @throws C2paException         when the operation fails inside WASM.
      * @throws IllegalStateException when this signer has been closed.
      */
-    private byte[] submit(Callable<byte[]> operation) throws C2paException {
+    private byte[] submit(Function<C2paWasm, byte[]> operation) throws C2paException {
         if (closed) {
             throw new IllegalStateException("TileSigner has been closed");
         }
-        Future<byte[]> future = wasmExecutor.submit(operation);
+        Future<byte[]> future = lanes.submit(operation::apply);
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -226,14 +264,14 @@ public final class TileSigner implements AutoCloseable {
     }
 
     /**
-     * Submit a WASM read operation to the dedicated signer thread and block
-     * for the result.
+     * Runs a WASM read operation on a pool lane with that lane's instance
+     * and blocks for the result.
      */
-    private <T> T submitRead(Callable<T> operation) throws C2paException {
+    private <T> T submitRead(Function<C2paWasm, T> operation) throws C2paException {
         if (closed) {
             throw new IllegalStateException("TileSigner has been closed");
         }
-        Future<T> future = wasmExecutor.submit(operation);
+        Future<T> future = lanes.submit(operation::apply);
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -257,10 +295,7 @@ public final class TileSigner implements AutoCloseable {
             return;
         }
         closed = true;
-        wasmExecutor.shutdown();
-        if (ownsWasm) {
-            wasm.close();
-        }
+        lanes.close();
     }
 
     /**

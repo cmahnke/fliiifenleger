@@ -7,6 +7,9 @@ package de.christianmahnke.iiif.fliiifenleger.wasm;
 import java.io.Closeable;
 import java.io.IOException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Abstraction over the WebAssembly runtime used to execute the compiled
  * codec modules (c2pa, ultrahdr, …).
@@ -31,15 +34,37 @@ import java.io.IOException;
  * all fliiifenleger codec crates (see the crate READMEs).  {@link
  * #allocBytes}, {@link #allocString} and friends build on these exports.
  *
- * <p><b>Threading:</b> WASM execution is single-threaded in both engines,
- * and codec libraries keep process-global state — route all access through
- * one dedicated thread (see the TileSigner in the jc2pa module for the
- * pattern) and never create two live instances of the same module per JVM.
+ * <p><b>Threading:</b> WASM instances are neither thread-safe nor allowed to
+ * hop host threads — every instance is bound to the single worker thread
+ * that created it (see {@link WasmLanePool}).  Separate instances are fully
+ * isolated and may run concurrently; a single instance must never be shared
+ * across threads.
  */
 public abstract class WasmEngine implements Closeable {
 
+    private static final Logger log = LoggerFactory.getLogger(WasmEngine.class);
+
     /** System property selecting the engine: {@code auto}, {@code chicory}, or {@code graalvm}. */
     public static final String ENGINE_PROPERTY = "wasm.engine";
+
+    /**
+     * System property for the global lane-parallelism fallback used when a
+     * caller does not request an explicit count.  Unset (or blank) means one
+     * lane per available processor (Chicory; GraalWasm stays capped, see
+     * {@link #resolveParallelism}).  Set {@code 1} for serial execution.
+     */
+    public static final String LANES_PROPERTY = "wasm.lanes";
+
+    /** Upper bound for GraalWasm lanes: polyglot contexts are heavy. */
+    public static final int MAX_GRAAL_LANES = 2;
+
+    /**
+     * Upper bound for the default lane count: measured sweet spot between
+     * wall-clock gains and CPU/memory cost.  Explicit requests (sink
+     * {@code threads} option, {@link #LANES_PROPERTY}) are still honoured up
+     * to the available processors.
+     */
+    public static final int DEFAULT_MAX_LANES = 4;
 
     /** Engine name for the Chicory implementation. */
     public static final String CHICORY = "chicory";
@@ -96,11 +121,73 @@ public abstract class WasmEngine implements Closeable {
      * load failure) use Chicory.
      */
     private static WasmEngine createAuto(byte[] wasmBytes) throws IOException {
-        boolean onGraalVm = System.getProperty("org.graalvm.version") != null;
-        if (onGraalVm && GraalWasmEngine.polyglotOnClasspath()) {
+        if (prefersGraal(null)) {
             return createGraalOrFallback(wasmBytes, true);
         }
         return new ChicoryEngine(wasmBytes);
+    }
+
+    private static boolean prefersGraal(String selection) {
+        if (GRAALVM.equals(selection)) {
+            return true;
+        }
+        if (selection == null || "auto".equals(selection)) {
+            return System.getProperty("org.graalvm.version") != null
+                && GraalWasmEngine.polyglotOnClasspath();
+        }
+        return false;
+    }
+
+    /**
+     * Resolves the effective lane count for parallel WASM execution.
+     *
+     * @param requested Requested lanes; must be at least 1.
+     * @param selection Engine selection as in {@link #create} (may be {@code null}).
+     * @return {@code requested} clamped to the available processors (and to
+     *         {@link #MAX_GRAAL_LANES} for GraalWasm).
+     * @throws IllegalArgumentException if {@code requested < 1}.
+     */
+    public static int resolveParallelism(int requested, String selection) {
+        if (requested < 1) {
+            throw new IllegalArgumentException(
+                "WASM lane parallelism must be at least 1, got " + requested);
+        }
+        int cores = Runtime.getRuntime().availableProcessors();
+        int lanes = Math.min(requested, cores);
+        if (lanes != requested) {
+            log.debug("Clamping WASM lanes from {} to {} (available processors)",
+                      requested, lanes);
+        }
+        if (lanes > MAX_GRAAL_LANES && prefersGraal(selection)) {
+            log.info("Clamping WASM lanes from {} to {} (GraalWasm contexts are heavy)",
+                     lanes, MAX_GRAAL_LANES);
+            lanes = MAX_GRAAL_LANES;
+        }
+        return lanes;
+    }
+
+    /**
+     * Resolves lane parallelism from the {@link #LANES_PROPERTY} system
+     * property, defaulting to one lane per available processor capped at
+     * {@link #DEFAULT_MAX_LANES} when unset or blank.  Explicit {@code 1}
+     * selects serial execution.
+     *
+     * @param selection Engine selection as in {@link #create} (may be {@code null}).
+     * @throws IllegalArgumentException if the property value is not a
+     *         positive integer.
+     */
+    public static int systemParallelism(String selection) {
+        String raw = System.getProperty(LANES_PROPERTY);
+        if (raw == null || raw.isBlank()) {
+            return resolveParallelism(
+                Math.min(Runtime.getRuntime().availableProcessors(), DEFAULT_MAX_LANES), selection);
+        }
+        try {
+            return resolveParallelism(Integer.parseInt(raw.trim()), selection);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                "Invalid -D" + LANES_PROPERTY + " value '" + raw + "': expected a positive integer", e);
+        }
     }
 
     /**

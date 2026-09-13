@@ -89,6 +89,9 @@ public class Main implements Runnable {
         @Option(names = "--validate-info", description = "Validate the generated info.json against the JSON Schema for the requested IIIF version.")
         private boolean validateInfo;
 
+        @Option(names = {"-j", "--jobs"}, description = "Tile-generation worker threads per image. 0 selects automatic sizing (-Dtiler.workers, else available processors).", defaultValue = "0")
+        private int jobs;
+
         @Parameters(index = "0..*", description = "Input image files to process.")
         private List<File> files;
 
@@ -102,6 +105,10 @@ public class Main implements Runnable {
             }
             if (tileSize <= 0) {
                 log.error("Error: --tile-size must be positive, got {}", tileSize);
+                return 1;
+            }
+            if (jobs < 0) {
+                log.error("Error: --jobs must be >= 0 (0 = automatic), got {}", jobs);
                 return 1;
             }
             if (version == null) {
@@ -156,27 +163,40 @@ public class Main implements Runnable {
                         tileSink.setOptions(sinkOptions);
                     }
 
+                    try {
                     Tiler tiler = new Tiler();
+                    tiler.setTileWorkers(jobs);
                     tiler.createImages(
-                            imageSource,
-                            List.of(file.toPath()),
-                            output,
-                            identifier,
-                            zoomLevels,
-                            tileSize,
-                            version,
-                            tileSink
-                    );
-                    if (validateInfo) {
-                        Path infoJson = output.resolve("info.json");
-                        var result = de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.validate(infoJson, version);
-                        if (!result.valid()) {
-                            for (String error : result.errors()) {
-                                log.error("info.json schema error for {}: {}", file.getPath(), error);
+                                imageSource,
+                                List.of(file.toPath()),
+                                output,
+                                identifier,
+                                zoomLevels,
+                                tileSize,
+                                version,
+                                tileSink
+                        );
+                        if (validateInfo) {
+                            Path infoJson = output.resolve("info.json");
+                            var result = de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.validate(infoJson, version);
+                            if (!result.valid()) {
+                                for (String error : result.errors()) {
+                                    log.error("info.json schema error for {}: {}", file.getPath(), error);
+                                }
+                                throw new TilerException("Generated info.json failed schema validation for " + file.getPath());
                             }
-                            throw new TilerException("Generated info.json failed schema validation for " + file.getPath());
+                            log.info("info.json schema validation passed for {}", file.getPath());
                         }
-                        log.info("info.json schema validation passed for {}", file.getPath());
+                    } finally {
+                        // Shut down lane pools promptly (c2pa/ultrahdr sinks);
+                        // plain sinks are unaffected.
+                        if (tileSink instanceof AutoCloseable closeable) {
+                            try {
+                                closeable.close();
+                            } catch (Exception e) {
+                                log.warn("Failed to close tile sink for {}: {}", file.getPath(), e.getMessage());
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     // In a real parallel stream, you'd want a better way to collect errors.

@@ -183,6 +183,24 @@ class C2paTileSinkTest {
     }
 
     @Test
+    @DisplayName("setOptions rejects invalid threads values")
+    void setOptionsInvalidThreadsThrows() {
+        for (String bad : new String[]{"0", "-2", "lots"}) {
+            C2paTileSink sink = new C2paTileSink();
+            assertThatThrownBy(() -> sink.setOptions(Map.of("threads", bad)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("threads");
+        }
+    }
+
+    @Test
+    @DisplayName("setOptions accepts threads=1 (serial execution)")
+    void setOptionsThreadsAccepted() {
+        C2paTileSink sink = new C2paTileSink();
+        sink.setOptions(Map.of("threads", "1"));
+    }
+
+    @Test
     @DisplayName("getName returns c2pa and the sink is ServiceLoader-registered")
     void sinkIsRegistered() {
         C2paTileSink sink = new C2paTileSink();

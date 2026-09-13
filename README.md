@@ -199,6 +199,7 @@ Generates IIIF tiles from one or more local image files.
 | `--source-opt <k=v>` | | Set an option for the image source (e.g., --source-opt key=value). | |
 | `--tile-size <size>` | `-t` | Set the tile size. | `512` |
 | `--zoom-levels <num>` | `-z` | Set the number of zoom levels. Set to `0` to auto-calculate. | `0` |
+| `--jobs <num>` | `-j` | Tile-generation worker threads per image. Set to `0` for automatic sizing (`-Dtiler.workers`, else available processors). | `0` |
 | `--validate-info` | | Validate the generated info.json against the JSON Schema for the requested IIIF version. Fails the generation on mismatch. | off |
 
 **Example:**
@@ -290,7 +291,8 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
   UltraHDR) advertises both capabilities in `info.json`.
 * Options: `delegate` (delegate sink, default `default`), `runtime` (WASM
   engine, default `auto`), `quality` (primary re-encode, default `90`),
-  `gainmap-quality` (default `85`).
+  `gainmap-quality` (default `85`), `threads` (parallel assembly lanes,
+  default one per available processor, see Parallel WASM lanes).
 * The sink advertises HDR capability in `info.json` via
   `https://christianmahnke.de/iiif/hdr/`: a `service` entry (plus
   `extraFeatures` entry and prepended JSON-LD context) for Image API 3, or an
@@ -300,8 +302,9 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
 (`ultrahdr`): the pure-Rust [`ultrahdr-rs`](https://github.com/imazen/ultrahdr)
 codec is compiled to WebAssembly (`wasm32-wasip1`, ~200 KB) and executed
 through the shared `wasm-runtime` layer (pure-JVM Chicory by default).  The
-two codec modules (`jc2pa`, `ultrahdr`) are independent — each keeps exactly
-one live WASM instance per JVM.
+two codec modules (`jc2pa`, `ultrahdr`) are independent — each keeps one
+live WASM instance per lane (one lane per available processor by default;
+see Parallel WASM lanes).
 
 ## C2PA Content Credentials
 
@@ -334,6 +337,7 @@ coordinates (`org.projektemacher.iiif.region` assertion).
 | `cert-name` | Common name for the ephemeral test certificate (only without `cert`/`key`). | `fliiifenleger` |
 | `claim-generator` | Claim generator string written into the manifest. | `fliiifenleger` |
 | `trust-anchor` | Absolute URI advertised as `trustAnchor` in the `https://christianmahnke.de/iiif/c2pa/` service entry of a V3 `info.json`. **Requires `--iiif-version V3`** — generation fails fast with Image API 2, which has no place for namespaced options (fixed `@context`). | – |
+| `threads` | Parallel signing lanes: `0`/unset follows `-Dwasm.lanes` (default: one per available processor); `1` selects serial execution. | auto |
 
 Every `c2pa` run advertises `https://christianmahnke.de/iiif/c2pa/` in
 `info.json`: a `service` entry (plus `extraFeatures` entry and prepended
@@ -427,14 +431,48 @@ same flow programmatically (runtime-generated CA + end-entity,
   only when running on a GraalVM with the polyglot artifacts present and
   falls back to Chicory otherwise.  The same option exists on the ultrahdr
   side (`--source-opt runtime=…` / `--sink-opt runtime=…`).
-* All WASM access is routed through a single dedicated thread; concurrent
-  tile generation is queued through it.
+* All WASM access is routed through a lane pool with strict thread-instance
+  affinity (see Parallel WASM lanes); a single lane behaves exactly like the
+  previous dedicated signing thread.
 * Known limitation: signing assets that already carry a C2PA manifest store
   can trip a Chicory interpreter edge case (fresh tiles are unaffected).
 * The `jc2pa` module is self-contained: `jc2pa-*-standalone.jar` embeds the
   compiled WASM module and offers the same operations from the command line
   (`version`, `read`, `label`, `manifest`, `validate`, `sign`,
   `sign-ephemeral`).
+
+### Parallel WASM lanes
+
+WASM work (C2PA signing, UltraHDR assembly) runs on one lane per available
+processor capped at 4 by default; `threads=1` (or `-Dwasm.lanes=1`) selects
+serial execution:
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar generate \
+  --sink c2pa \
+  --sink-opt threads=2 \
+  -o ./signed-iiif /path/to/image.jpg
+```
+
+`--sink-opt threads=N` exists on both the `c2pa` and `ultrahdr` sinks;
+`-Dwasm.lanes=N` sets the default when unset.  Each lane pairs one
+interpreter instance with its own thread (instances are fully isolated, so
+manifests can't leak across tiles); requests are clamped to the available
+processors (and to 2 lanes for GraalWasm).
+
+Tiles themselves are generated per-tile tasks over a worker pool sized by
+`--jobs/-j` (`-Dtiler.workers`, default: available processors), so slow
+tiles no longer pin a whole scale level behind them.
+
+Measured on a 10-core laptop (`page011.jpg`, 105 tiles, ephemeral C2PA
+signatures): serial (`threads=1`) ~26s, `threads=2` ~14–19s at near-equal
+CPU, default (4 lanes here) ~12–13s.  Isolated signing throughput scales
+near-linearly: 12 distinct 512px tiles 2.6s → 0.7s (3.8×), one 1.4MB
+full-size tile 20.4s → 5.7s (3.6×).  Your mileage varies with tile-size mix
+(a few huge tiles dominate the tail) and hardware; beyond ~4 lanes
+oversubscription burns CPU and memory without wall gains on this machine
+(6 lanes: ~13.4s at +38% CPU), hence the default cap — raise it explicitly
+for server hardware.
 
 ## Advanced Usage
 

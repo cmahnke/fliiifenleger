@@ -169,4 +169,67 @@ public class TilerTest {
             }
         }
     }
+
+    @Test
+    public void testTileWorkersValidation() {
+        assertThrows(IllegalArgumentException.class, () -> tiler.setTileWorkers(-1));
+        tiler.setTileWorkers(0);
+        tiler.setTileWorkers(2);
+        assertEquals(2, tiler.getTileWorkers());
+        tiler.setTileWorkers(0);
+    }
+
+    @Test
+    public void testTileWorkersDefaultAndProperty() {
+        String previous = System.getProperty(Tiler.WORKERS_PROPERTY);
+        try {
+            System.clearProperty(Tiler.WORKERS_PROPERTY);
+            assertEquals(Runtime.getRuntime().availableProcessors(), new Tiler().getTileWorkers());
+            System.setProperty(Tiler.WORKERS_PROPERTY, "3");
+            assertEquals(3, new Tiler().getTileWorkers());
+            System.setProperty(Tiler.WORKERS_PROPERTY, "bogus");
+            assertThrows(IllegalArgumentException.class, () -> new Tiler().getTileWorkers());
+            System.setProperty(Tiler.WORKERS_PROPERTY, "0");
+            assertThrows(IllegalArgumentException.class, () -> new Tiler().getTileWorkers());
+        } finally {
+            if (previous == null) {
+                System.clearProperty(Tiler.WORKERS_PROPERTY);
+            } else {
+                System.setProperty(Tiler.WORKERS_PROPERTY, previous);
+            }
+        }
+    }
+
+    @Test
+    public void testParallelOutputMatchesSerial() throws Exception {
+        File imageFile = new File("src/test/resources/images/page011.jpg");
+        Path serialOut = tempDir.resolve("serial");
+        Path parallelOut = tempDir.resolve("parallel");
+        Files.createDirectories(serialOut);
+        Files.createDirectories(parallelOut);
+
+        Tiler serial = new Tiler();
+        serial.setTileWorkers(1);
+        serial.createImages(imageSource, List.of(imageFile.toPath()), serialOut,
+                "http://localhost/iiif/", 2, 256, ImageInfo.IIIFVersion.V2, new DefaultTileSink());
+
+        Tiler parallel = new Tiler();
+        parallel.setTileWorkers(4);
+        parallel.createImages(imageSource, List.of(imageFile.toPath()), parallelOut,
+                "http://localhost/iiif/", 2, 256, ImageInfo.IIIFVersion.V2, new DefaultTileSink());
+
+        try (var serialWalk = Files.walk(serialOut); var parallelWalk = Files.walk(parallelOut)) {
+            List<String> serialFiles = serialWalk.filter(Files::isRegularFile)
+                    .map(serialOut::relativize).map(Path::toString).sorted().toList();
+            List<String> parallelFiles = parallelWalk.filter(Files::isRegularFile)
+                    .map(parallelOut::relativize).map(Path::toString).sorted().toList();
+            assertEquals(serialFiles, parallelFiles, "parallel run must produce the same file set");
+            assertFalse(serialFiles.isEmpty(), "expected tiles to compare");
+            for (String relative : serialFiles) {
+                assertArrayEquals(Files.readAllBytes(serialOut.resolve(relative)),
+                        Files.readAllBytes(parallelOut.resolve(relative)),
+                        "tile bytes must match: " + relative);
+            }
+        }
+    }
 }

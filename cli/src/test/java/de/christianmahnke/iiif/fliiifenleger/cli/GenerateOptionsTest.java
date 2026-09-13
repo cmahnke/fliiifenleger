@@ -48,6 +48,17 @@ class GenerateOptionsTest {
     }
 
     @Test
+    @DisplayName("--jobs defaults to 0 (automatic) and accepts a value")
+    void jobsOption() {
+        Main.GenerateCommand automatic = parse("some.jpg");
+        int jobsDefault = cmdLineValue(automatic, "jobs");
+        assertThat(jobsDefault).isZero();
+        Main.GenerateCommand explicit = parse("--jobs", "4", "some.jpg");
+        int jobsExplicit = cmdLineValue(explicit, "jobs");
+        assertThat(jobsExplicit).isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("validate --schema defaults to auto")
     void validateSchemaDefaultsAuto() {
         Main.ValidateCommand cmd = new Main.ValidateCommand();

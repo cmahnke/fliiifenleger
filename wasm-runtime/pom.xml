@@ -52,6 +52,11 @@
             <version>${chicory.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
         <!--
             GraalVM WebAssembly runtime (OPTIONAL).
             Only needed when running on a GraalVM and selecting
