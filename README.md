@@ -11,36 +11,68 @@
 - Features
 - Architecture
 - Prerequisites
+- Quick Start
 - Building from Source
 - Installation
+- Maven Artifacts
 - Usage
 - Commands and Options
   - `generate`
   - `validate`
   - `info`
+  - `info.json` validation
 - Advanced Usage
+
+## Quick Start
+
+```sh
+# Clone the repo (https://github.com/cmahnke/fliiifenleger).
+git clone https://github.com/cmahnke/fliiifenleger.git
+cd fliiifenleger
+
+# Build everything (needs JDK 23+, Maven 3.x and a Rust toolchain for the
+# WASM codecs; use -DskipTests for a faster build without tests).
+mvn clean package -DskipTests
+
+# Tile a sample image (IIIF Image API 2 by default, info.json validated).
+java -jar cli/target/fliiifenleger-cli.jar generate --validate-info \
+  -o ./my-iiif-images /path/to/image.jpg
+
+# Inspect the generated Image API description.
+cat ./my-iiif-images/info.json
+```
+
+Next steps: try `--iiif-version V3`, the `ultrahdr` / `c2pa` sinks below,
+or point `validate` at a served endpoint (see Commands and Options).
 
 ## Architecture
 
-The project is a multi-module Maven project with a `core` and a `cli` module.
+The project is a multi-module Maven project (`core`, `wasm-runtime`,
+`cli`, `jc2pa`, `ultrahdr`).
 
 1.  **Core Module (`core`)**: This module contains the main business logic for IIIF processing.
     *   `ImageSource`: An interface for reading different source image formats (e.g., `DefaultImageSource`, `JxlImageSource`).
     *   `TileSink`: An interface for writing image tiles to different destinations (e.g., `DefaultTileSink` for the local filesystem).
+    *   `TileEnricher`: A pluggable per-tile metadata hook (e.g., `RegionTileEnricher` records the tile region; the `ultrahdr` module adds the gain-map crop).
     *   `Tiler`: The central class that orchestrates the process of reading a source image, calculating tile layouts, and writing the tiles and `info.json` using a `TileSink`.
     *   `IiifImageReassembler`: A debug/validation utility to reconstruct a full image from a remote IIIF endpoint.
+    *   `InfoJsonValidator`: Validates generated or remote `info.json` documents against the bundled JSON Schemas (Image API 2 and 3, plus the HDR/C2PA extensions).
 
 2.  **CLI Module (`cli`)**: This module provides the command-line interface.
     *   It uses the **picocli** library to define commands, subcommands, and options.
     *   The `Main.java` class is the entry point, defining the main `fliiifenleger` command and its subcommands: `generate`, `validate`, and `info`.
     *   Each subcommand is implemented as a `Callable` class that parses its specific options and calls the appropriate logic in the `core` module.
 
-The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource` and `TileSink` implementations at runtime.
+3.  **Codec Modules (`jc2pa`, `ultrahdr`, `wasm-runtime`)**: The C2PA signer and the UltraHDR gain-map codec are pure-Rust libraries compiled to WebAssembly (`wasm32-wasip1`) and executed through the shared `wasm-runtime` layer (pure-JVM Chicory by default, optional GraalWasm). The compiled `.wasm` files are build artifacts, not part of the repo.
+
+The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource`, `TileSink`, and `TileEnricher` implementations at runtime.
 
 ## Prerequisites
 
-*   Java JDK 9 or newer
+*   Java JDK 23 or newer to build (the build enforces this; the emitted bytecode targets Java 21, so running needs Java 21+)
 *   Apache Maven 3.x
+*   Rust toolchain (`cargo` + `rustup`, `wasm32-wasip1` target) to compile the `jc2pa` / `ultrahdr` WASM codecs from source — not needed with `-Dmaven.cargo.skip=true` if prebuilt `.wasm` files are already present
+*   No display needed: all tests run headless (`-Djava.awt.headless=true` is set for every test JVM)
 
 ### Optional Software
 
@@ -80,6 +112,53 @@ For convenience, you can create an alias or a shell script to make it easier to 
 ```sh
 alias fliiifenleger='java -jar cli/target/fliiifenleger-cli.jar'
 ```
+
+## Maven Artifacts
+
+The modules are published as Maven artifacts to
+[GitHub Packages](https://github.com/cmahnke/fliiifenleger/packages) —
+they are **not** on Maven Central. To consume them, add the repository:
+
+```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/cmahnke/fliiifenleger</url>
+    </repository>
+</repositories>
+```
+
+GitHub Packages requires authentication even for downloads, with a server
+entry whose `id` matches the repository above (use a personal access token
+with `read:packages`):
+
+```xml
+<!-- ~/.m2/settings.xml -->
+<settings>
+    <servers>
+        <server>
+            <id>github</id>
+            <username>YOUR_GITHUB_USERNAME</username>
+            <password>YOUR_TOKEN</password>
+        </server>
+    </servers>
+</settings>
+```
+
+Then depend on the modules you need (see the packages page for available
+versions):
+
+```xml
+<dependency>
+    <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+    <artifactId>core</artifactId>
+    <version>0.3.0</version>
+</dependency>
+```
+
+Available artifacts: `core` (tiling logic, schemas, validator), `cli`
+(command line), `jc2pa` (C2PA signing), `ultrahdr` (gain-map support),
+`wasm-runtime` (shared WASM engine layer).
 
 ## Usage
 
@@ -197,6 +276,10 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
 * `--sink ultrahdr` wraps a delegate sink and assembles each tile with its
   cropped gain map and the original metadata.  Tiles from gain-map-less
   sources pass through unchanged.
+* The per-tile gain-map crop is contributed through the generic
+  `TileEnricher` SPI (`GainMapTileEnricher` in the `ultrahdr` module), so
+  core stays free of HDR-specific code; stacking sinks (e.g. C2PA over
+  UltraHDR) advertises both capabilities in `info.json`.
 * Options: `delegate` (delegate sink, default `default`), `runtime` (WASM
   engine, default `auto`), `quality` (primary re-encode, default `90`),
   `gainmap-quality` (default `85`).
