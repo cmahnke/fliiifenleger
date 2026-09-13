@@ -22,7 +22,6 @@ public class FilterImageSourceTest {
 
     @BeforeEach
     void setUp() throws IOException, ImageSourceException {
-        System.setProperty("java.awt.headless", "true");
         File validImageFile = new File("src/test/resources/images/page011.jpg");
         URL validImageUrl = validImageFile.toURI().toURL();
         sourceImage = new DefaultImageSource();

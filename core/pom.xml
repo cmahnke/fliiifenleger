@@ -71,6 +71,10 @@
             <groupId>com.apicatalog</groupId>
             <artifactId>titanium-json-ld</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+        </dependency>
 
         <!-- Image IO -->
         <dependency>
@@ -101,13 +105,11 @@
                             <name>org.slf4j.simpleLogger.defaultLogLevel</name>
                             <value>trace</value>
                         </property>
-                        <property>
-                            <name>java.awt.headless</name>
-                            <value>true</value>
-                        </property>
                     </systemPropertyVariables>
+                    <!-- java.awt.headless comes from the parent pom for all modules. -->
                     <argLine>
                         --enable-native-access=ALL-UNNAMED
+                        ${unsafe.memory.access.arg}
                         -Djava.awt.headless=true
                     </argLine>
                 </configuration>

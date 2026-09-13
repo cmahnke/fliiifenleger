@@ -1,0 +1,10 @@
+{
+  "@context": {
+    "c2pa": "https://christianmahnke.de/iiif/c2pa/",
+    "trustAnchor": {
+      "@id": "c2pa:trustAnchor",
+      "@type": "@id"
+    },
+    "Service": "http://iiif.io/api/image#Service"
+  }
+}

@@ -86,6 +86,9 @@ public class Main implements Runnable {
         @Option(names = "--iiif-version", description = "Set the IIIF version. Options are V2, V3.", defaultValue = "V2")
         private ImageInfo.IIIFVersion version;
 
+        @Option(names = "--validate-info", description = "Validate the generated info.json against the JSON Schema for the requested IIIF version.")
+        private boolean validateInfo;
+
         @Parameters(index = "0..*", description = "Input image files to process.")
         private List<File> files;
 
@@ -97,7 +100,15 @@ public class Main implements Runnable {
                 new CommandLine(this).usage(System.out);
                 return 1;
             }
+            if (tileSize <= 0) {
+                log.error("Error: --tile-size must be positive, got {}", tileSize);
+                return 1;
+            }
+            if (version == null) {
+                version = ImageInfo.IIIFVersion.V2;
+            }
 
+            java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
             // Process files in parallel
             files.parallelStream().forEach(file -> {
                 try {
@@ -152,17 +163,31 @@ public class Main implements Runnable {
                             output,
                             identifier,
                             zoomLevels,
+                            tileSize,
+                            version,
                             tileSink
                     );
+                    if (validateInfo) {
+                        Path infoJson = output.resolve("info.json");
+                        var result = de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.validate(infoJson, version);
+                        if (!result.valid()) {
+                            for (String error : result.errors()) {
+                                log.error("info.json schema error for {}: {}", file.getPath(), error);
+                            }
+                            throw new TilerException("Generated info.json failed schema validation for " + file.getPath());
+                        }
+                        log.info("info.json schema validation passed for {}", file.getPath());
+                    }
                 } catch (Exception e) {
                     // In a real parallel stream, you'd want a better way to collect errors.
                     // For this example, we just print it.
                     log.error("Failed to process file {}: {}", file.getPath(), e.getMessage(), e);
+                    failures.incrementAndGet();
                     // To make the process fail, you could use a shared error collection or rethrow a runtime exception.
                 }
             });
 
-            return 0; // Success
+            return failures.get() == 0 ? 0 : 1; // Success
         }
     }
 
@@ -184,10 +209,35 @@ public class Main implements Runnable {
                 description = "Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest.")
         private boolean checkC2pa;
 
+        @Option(names = {"--schema"}, description = "Validate info.json against its JSON Schema before reassembly. Values: auto, 2, 3, off.", defaultValue = "auto")
+        private String schemaMode;
+
         @Override
         public Integer call() {
             log.info("Starting validation for: {}", infoJsonUrl);
             try {
+                if (!"off".equalsIgnoreCase(schemaMode)) {
+                    ImageInfo.IIIFVersion expected = null;
+                    if ("2".equals(schemaMode) || "v2".equalsIgnoreCase(schemaMode)) {
+                        expected = ImageInfo.IIIFVersion.V2;
+                    } else if ("3".equals(schemaMode) || "v3".equalsIgnoreCase(schemaMode)) {
+                        expected = ImageInfo.IIIFVersion.V3;
+                    } else if (!"auto".equalsIgnoreCase(schemaMode)) {
+                        log.error("Invalid --schema value '{}': expected auto, 2, 3, or off.", schemaMode);
+                        return 1;
+                    }
+                    var schemaResult = de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.validate(
+                            new URI(infoJsonUrl).toURL(), expected);
+                    if (!schemaResult.valid()) {
+                        for (String error : schemaResult.errors()) {
+                            log.error("info.json schema error: {}", error);
+                        }
+                        log.error("info.json schema validation failed for {}", infoJsonUrl);
+                        return 1;
+                    }
+                    log.info("info.json schema validation passed (detected Image API {}).",
+                            schemaResult.detectedVersion() != null ? schemaResult.detectedVersion().getShortName() : "?");
+                }
                 IiifImageReassembler reassembler = new IiifImageReassembler(new URI(infoJsonUrl).toURL());
                 reassembler.load();
                 BufferedImage fullImage = reassembler.reassemble(checkC2pa);

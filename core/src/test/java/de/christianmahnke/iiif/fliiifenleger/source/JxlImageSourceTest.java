@@ -5,7 +5,6 @@ package de.christianmahnke.iiif.fliiifenleger.source;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeAll;
 
 import java.awt.image.BufferedImage;
 import java.awt.GraphicsEnvironment;
@@ -23,11 +22,6 @@ public class JxlImageSourceTest {
 
     private URL validJxlUrl;
     private URL nonExistentJxlUrl;
-
-    @BeforeAll
-    public static void setUpClass() {
-        System.setProperty("java.awt.headless", "true");
-    }
 
     @BeforeEach
     public void setUp() throws MalformedURLException {

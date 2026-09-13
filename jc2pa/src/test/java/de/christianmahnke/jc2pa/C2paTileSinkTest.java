@@ -80,6 +80,12 @@ class C2paTileSinkTest {
     // ── saveTile ──────────────────────────────────────────────────────────────
 
     @Test
+    @DisplayName("tests run headless")
+    void runsHeadless() {
+        assertThat(java.awt.GraphicsEnvironment.isHeadless()).isTrue();
+    }
+
+    @Test
     @DisplayName("saveTile writes a C2PA-signed tile with the region assertion")
     void saveTileSignsTile(@TempDir Path tempDir) throws Exception {
         try (C2paTileSink sink = testSink()) {

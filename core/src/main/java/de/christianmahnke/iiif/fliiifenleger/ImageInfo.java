@@ -25,7 +25,9 @@ public class ImageInfo {
     private final List<Integer> scaleFactors;
     @Getter
     private final List<Size> sizes;
+    @Getter
     private final String identifier;
+    @Getter
     private final IIIFVersion version;
 
     public ImageInfo(ImageSource image, int tileWidth, int tileHeight, int zoomLevels, String identifier, IIIFVersion version) {

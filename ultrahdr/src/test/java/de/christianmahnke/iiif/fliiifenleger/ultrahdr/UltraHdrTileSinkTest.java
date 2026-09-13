@@ -9,8 +9,6 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.DefaultTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
-import de.christianmahnke.iiif.fliiifenleger.source.GainMapData;
-import de.christianmahnke.iiif.fliiifenleger.source.GainMapSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 
 import org.junit.jupiter.api.AfterAll;
@@ -22,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -111,6 +110,12 @@ class UltraHdrTileSinkTest {
     }
 
     // ── UltraHdrImageSource ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("tests run headless")
+    void runsHeadless() {
+        assertThat(GraphicsEnvironment.isHeadless()).isTrue();
+    }
 
     @Test
     @DisplayName("the ultrahdr source splits primary and gain map")

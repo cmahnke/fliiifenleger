@@ -2,7 +2,6 @@
 // Copyright (c) 2025 Christian Mahnke
 package de.christianmahnke.iiif.fliiifenleger.source;
 
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,11 +18,6 @@ import static org.junit.jupiter.api.Assertions.*;
 public class IiifImageSourceTest {
 
     private URL iiifInfoJsonUrl;
-
-    @BeforeAll
-    public static void setUpClass() {
-        System.setProperty("java.awt.headless", "true");
-    }
 
     @BeforeEach
     public void setUp() throws URISyntaxException, MalformedURLException {

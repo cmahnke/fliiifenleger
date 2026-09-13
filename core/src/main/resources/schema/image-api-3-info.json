@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://christianmahnke.de/iiif/schema/image-api-3-info.json",
+  "title": "IIIF Image API 3.0 info.json (fliiifenleger, with HDR/C2PA extensions)",
+  "type": "object",
+  "required": ["@context", "id", "type", "protocol", "profile", "width", "height"],
+  "properties": {
+    "@context": {
+      "description": "IIIF context last; extension contexts (e.g. C2PA/HDR) prepended.",
+      "anyOf": [
+        { "const": "http://iiif.io/api/image/3/context.json" },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "format": "uri" },
+          "contains": { "const": "http://iiif.io/api/image/3/context.json" }
+        }
+      ]
+    },
+    "id": { "type": "string", "format": "uri" },
+    "type": { "const": "ImageService3" },
+    "protocol": { "const": "http://iiif.io/api/image" },
+    "profile": { "enum": ["level0", "level1", "level2"] },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 },
+    "maxWidth": { "type": "integer", "minimum": 1 },
+    "maxHeight": { "type": "integer", "minimum": 1 },
+    "maxArea": { "type": "integer", "minimum": 1 },
+    "tiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["width", "scaleFactors"],
+        "properties": {
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "scaleFactors": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "sizes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["width", "height"],
+        "properties": {
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "extraFeatures": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "extraFormats": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "extraQualities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "service": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "$ref": "#/$defs/c2paService" },
+          { "$ref": "#/$defs/hdrService" },
+          { "$ref": "#/$defs/genericService" }
+        ]
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "genericService": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "format": "uri" },
+        "type": { "type": "string" },
+        "profile": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "c2paService": {
+      "title": "C2PA extension service (https://christianmahnke.de/iiif/c2pa/)",
+      "type": "object",
+      "required": ["id", "type", "profile"],
+      "properties": {
+        "id": { "type": "string", "format": "uri" },
+        "type": { "type": "string" },
+        "profile": { "const": "https://christianmahnke.de/iiif/c2pa/" },
+        "trustAnchor": {
+          "description": "Advertised C2PA trust anchor (absolute URI). V3 only.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": true
+    },
+    "hdrService": {
+      "title": "HDR extension service (https://christianmahnke.de/iiif/hdr/)",
+      "type": "object",
+      "required": ["id", "type", "profile"],
+      "properties": {
+        "id": { "type": "string", "format": "uri" },
+        "type": { "type": "string" },
+        "profile": { "const": "https://christianmahnke.de/iiif/hdr/" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

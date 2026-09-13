@@ -3,22 +3,24 @@
 package de.christianmahnke.iiif.fliiifenleger;
 
 import de.christianmahnke.iiif.fliiifenleger.sink.DefaultTileSink;
+import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.awt.image.BufferedImage;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.awt.GraphicsEnvironment;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,11 +32,6 @@ public class TilerTest {
 
     private Tiler tiler;
     private ImageSource imageSource;
-
-    @BeforeAll
-    public static void setUpClass() {
-        System.setProperty("java.awt.headless", "true");
-    }
 
     @BeforeEach
     public void setUp() throws IOException, ImageSourceException {
@@ -52,7 +49,6 @@ public class TilerTest {
     }
 
     @Test
-    @Disabled
     public void graphicsEnvironment_shouldBeHeadless() {
         assertTrue(GraphicsEnvironment.isHeadless(), "Should be executed headless");
     }
@@ -117,5 +113,60 @@ public class TilerTest {
         // e.g., a specific tile from a scaled level
         Path scaledTilePath = imageOutputDir.resolve("2048,1024,1024,1024/1024,1024/0/default.jpg");
         assertTrue(Files.exists(scaledTilePath), "A scaled tile should exist for V3");
+    }
+
+    @Test
+    public void testCreateImagesForwardsTileSizeAndVersion() throws Exception {
+        File imageFile = new File("src/test/resources/images/page011.jpg");
+        Path out = tempDir.resolve("forwarded");
+        Files.createDirectories(out);
+
+        tiler.createImages(imageSource, List.of(imageFile.toPath()), out,
+                "http://localhost/iiif/", 1, 256, ImageInfo.IIIFVersion.V3, new DefaultTileSink());
+
+        tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+        tools.jackson.databind.JsonNode infoJson = mapper.readTree(out.resolve("info.json").toFile());
+        assertEquals("http://iiif.io/api/image/3/context.json", infoJson.get("@context").asString());
+        assertEquals(256, infoJson.get("tiles").get(0).get("width").asInt());
+    }
+
+    /**
+     * A sink whose info.json extension is incompatible with the requested
+     * version (like C2PA {@code trust-anchor} with Image API 2).
+     */
+    static class IncompatibleSink implements TileSink {
+        @Override
+        public void saveTile(OutputStream outputStream, BufferedImage image, Map<String, Object> metadata) {
+            throw new UnsupportedOperationException("must not be called");
+        }
+
+        @Override
+        public String getFormatExtension() {
+            return "jpg";
+        }
+
+        @Override
+        public String getName() {
+            return "incompatible";
+        }
+
+        @Override
+        public InfoExtension getInfoJsonExtension(ImageInfo.IIIFVersion version) {
+            throw new IllegalArgumentException("namespaced options require Image API 3");
+        }
+    }
+
+    @Test
+    public void testCreateImageFailsFastWithoutWritingTiles() throws Exception {
+        ImageInfo imageInfo = new ImageInfo(imageSource, 512, 512, 1, "http://localhost/iiif/", ImageInfo.IIIFVersion.V2);
+        Path out = tempDir.resolve("failfast");
+
+        assertThrows(IllegalArgumentException.class, () -> tiler.createImage(imageInfo, out, new IncompatibleSink()));
+        assertFalse(Files.exists(out.resolve("info.json")), "info.json must not be written on extension failure");
+        if (Files.exists(out)) {
+            try (var stream = Files.walk(out)) {
+                assertEquals(0, stream.filter(Files::isRegularFile).count(), "no tiles must be written on extension failure");
+            }
+        }
     }
 }

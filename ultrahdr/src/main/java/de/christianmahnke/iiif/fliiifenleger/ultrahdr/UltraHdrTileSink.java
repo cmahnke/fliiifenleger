@@ -5,11 +5,11 @@
 package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import com.google.auto.service.AutoService;
+import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
-import de.christianmahnke.iiif.fliiifenleger.source.GainMapData;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,12 +25,15 @@ import java.util.Map;
  * A {@link TileSink} decorator that integrates the UltraHDR gain map into
  * every tile: the delegate sink renders the primary tile, the correspondingly
  * cropped gain map (provided by the {@code Tiler} through the metadata map,
- * see the {@link de.christianmahnke.iiif.fliiifenleger.source.GainMapData}
+ * see the {@link GainMapData}
  * key constants) is re-encoded, and the ultrahdr WASM codec assembles both
  * into an UltraHDR JPEG that is written to the real output stream.
  *
  * <p>Tiles from sources without a gain map pass through unchanged (the
  * metadata entries are simply absent).
+ *
+ * <p><b>info.json:</b> always advertises {@code https://christianmahnke.de/iiif/hdr/}
+ * (V3 service + {@code extraFeatures}, V2 {@code supports} entry).
  *
  * <p><b>Options</b> (via {@code --sink-opt}):
  * <ul>
@@ -110,6 +113,61 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     @Override
     public String getName() {
         return "ultrahdr";
+    }
+
+    /**
+     * Advertises UltraHDR support in {@code info.json} via
+     * {@link TileSink#HDR_PROFILE_URI}.
+     *
+     * <ul>
+     *   <li>V3: prepends {@link TileSink#HDR_CONTEXT_URI} to {@code @context},
+     *       adds a {@code service} entry and an {@code extraFeatures} entry.</li>
+     *   <li>V2: adds the profile URI to the embedded profile {@code supports}
+     *       list (plain URI entries are allowed by the V2 spec).</li>
+     * </ul>
+     */
+    @Override
+    public InfoExtension getInfoJsonExtension(ImageInfo.IIIFVersion version) {
+        java.util.Map<String, Object> service = new java.util.LinkedHashMap<>();
+        service.put("id", HDR_PROFILE_URI);
+        service.put("type", "Service");
+        service.put("profile", HDR_PROFILE_URI);
+        InfoExtension own;
+        if (version == ImageInfo.IIIFVersion.V3) {
+            own = new InfoExtension(
+                java.util.List.of(HDR_CONTEXT_URI),
+                java.util.List.of(java.util.Collections.unmodifiableMap(service)),
+                java.util.List.of(HDR_PROFILE_URI));
+        } else {
+            own = new InfoExtension(
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of(HDR_PROFILE_URI));
+        }
+        return own.mergedWith(delegateExtension(version));
+    }
+
+    private InfoExtension delegateExtension(ImageInfo.IIIFVersion version) {
+        try {
+            if (delegate != null) {
+                if (delegate.getName().equals(getName())) {
+                    return InfoExtension.empty();
+                }
+                return delegate.getInfoJsonExtension(version);
+            }
+            if (delegateName == null || delegateName.equals("default") || delegateName.equals(getName())) {
+                return InfoExtension.empty();
+            }
+            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
+            if (template == null) {
+                return InfoExtension.empty();
+            }
+            TileSink instance = template.getClass().getConstructor().newInstance();
+            return instance.getInfoJsonExtension(version);
+        } catch (Exception e) {
+            log.debug("Cannot resolve delegate info.json extension: {}", e.getMessage());
+            return InfoExtension.empty();
+        }
     }
 
     // ── TileSink ──────────────────────────────────────────────────────────────

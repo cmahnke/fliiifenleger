@@ -21,6 +21,10 @@
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.48</lombok.version>
         <jackson.version>3.2.2</jackson.version>
+        <!-- Silences JEP 471 sun.misc.Unsafe warnings from Lombok's annotation
+             processor in forked test JVMs (the Maven JVM itself is covered by
+             .mvn/jvm.config). Only exists on JDK 23+, hence requireJavaVersion. -->
+        <unsafe.memory.access.arg>--sun-misc-unsafe-memory-access=allow</unsafe.memory.access.arg>
     </properties>
 
     <modules>
@@ -97,6 +101,11 @@
                 <artifactId>titanium-json-ld</artifactId>
                 <version>1.7.0</version>
             </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>1.5.3</version>
+            </dependency>
 
             <!-- Image IO -->
             <dependency>
@@ -138,7 +147,12 @@
                     <configuration>
                         <!-- The JXL imageio plugin uses the FFM API (Panama);
                              without this flag JDK 24+ warns on every load. -->
-                        <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+                        <argLine>--enable-native-access=ALL-UNNAMED ${unsafe.memory.access.arg} -Djava.awt.headless=true</argLine>
+                        <!-- All image tests must run headless (CI has no display);
+                             set here so every module fork inherits it. -->
+                        <systemPropertyVariables>
+                            <java.awt.headless>true</java.awt.headless>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -215,6 +229,34 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-project-info-reports-plugin</artifactId>
                 <version>3.9.0</version>
+            </plugin>
+            <!--
+                .mvn/jvm.config passes the allow value for
+                sun-misc-unsafe-memory-access to silence JEP 471 Unsafe
+                warnings from Lombok. That JVM option only exists on JDK 23+,
+                so fail fast with an explanation instead of an obscure JVM
+                launch error. (Bytecode output stays release 21.)
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce-java</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[23,)</version>
+                                    <message>fliiifenleger requires JDK 23+ to build: .mvn/jvm.config uses --sun-misc-unsafe-memory-access=allow (silences sun.misc.Unsafe warnings from Lombok, JEP 471), which does not exist on older JDKs.</message>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

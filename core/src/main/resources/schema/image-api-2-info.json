@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://christianmahnke.de/iiif/schema/image-api-2-info.json",
+  "title": "IIIF Image API 2.1 info.json (fliiifenleger, with HDR/C2PA supports entries)",
+  "description": "Image API 2 has a fixed @context, so extensions are plain URIs in the embedded profile supports list. Namespaced properties such as trustAnchor are rejected.",
+  "type": "object",
+  "required": ["@context", "@id", "protocol", "profile", "width", "height"],
+  "properties": {
+    "@context": { "const": "http://iiif.io/api/image/2/context.json" },
+    "@id": { "type": "string", "format": "uri" },
+    "protocol": { "const": "http://iiif.io/api/image" },
+    "profile": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [
+        { "type": "string", "pattern": "^http://iiif\\.io/api/image/2/level[0-2]\\.json$" }
+      ],
+      "items": {
+        "anyOf": [
+          { "type": "string" },
+          { "$ref": "#/$defs/embeddedProfile" }
+        ]
+      }
+    },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 },
+    "tiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["width", "scaleFactors"],
+        "properties": {
+          "width": { "type": "integer", "minimum": 1 },
+          "scaleFactors": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "sizes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["width", "height"],
+        "properties": {
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": true
+      }
+    },
+    "service": {
+      "description": "V2 service hook (object or list). Must not carry namespaced extension properties.",
+      "anyOf": [
+        { "$ref": "#/$defs/v2Service" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/v2Service" }
+        }
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "embeddedProfile": {
+      "type": "object",
+      "properties": {
+        "formats": { "type": "array", "items": { "type": "string" } },
+        "qualities": { "type": "array", "items": { "type": "string" } },
+        "supports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "maxWidth": { "type": "integer", "minimum": 1 },
+        "maxHeight": { "type": "integer", "minimum": 1 },
+        "maxArea": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "v2Service": {
+      "type": "object",
+      "properties": {
+        "@id": { "type": "string", "format": "uri" },
+        "@type": { "type": "string" },
+        "id": { "type": "string", "format": "uri" },
+        "type": { "type": "string" },
+        "profile": { "type": "string" },
+        "trustAnchor": false
+      },
+      "additionalProperties": true,
+      "not": { "required": ["trustAnchor"] }
+    }
+  }
+}

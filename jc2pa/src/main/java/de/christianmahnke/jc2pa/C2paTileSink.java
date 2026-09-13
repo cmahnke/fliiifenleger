@@ -11,6 +11,7 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
+import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,7 +55,14 @@ import java.util.Map;
  *       {@code fliiifenleger}).  Ephemeral signatures are for testing only.</li>
  *   <li>{@code claim-generator} — claim generator string written into the
  *       manifest.</li>
+ *   <li>{@code trust-anchor} — absolute URI advertised as {@code trustAnchor}
+ *       in the {@code https://christianmahnke.de/iiif/c2pa/} service entry of
+ *       a V3 {@code info.json}. Requires {@code --iiif-version V3}; fails with
+ *       Image API 2 since V2 offers no place for namespaced options.</li>
  * </ul>
+ *
+ * <p><b>info.json:</b> always advertises {@code https://christianmahnke.de/iiif/c2pa/}
+ * (V3 service + {@code extraFeatures}, V2 {@code supports} entry).
  *
  * <p><b>Threading:</b> the {@code Tiler} generates tiles concurrently; all
  * WASM access is routed through the {@link TileSigner}'s dedicated thread.
@@ -77,6 +85,7 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     private String tsaUrl         = null;
     private String certName       = "fliiifenleger";
     private String claimGenerator = DEFAULT_CLAIM_GENERATOR;
+    private String trustAnchor     = null;
 
     /** Lazily created signer; one per sink instance. */
     private TileSigner signer;
@@ -119,6 +128,25 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
         if (options.containsKey("claim-generator")) {
             this.claimGenerator = options.get("claim-generator");
         }
+        if (options.containsKey("trust-anchor")) {
+            String value = options.get("trust-anchor");
+            if (value == null || value.isBlank()) {
+                this.trustAnchor = null;
+            } else {
+                String trimmed = value.trim();
+                try {
+                    java.net.URI uri = new java.net.URI(trimmed);
+                    if (!uri.isAbsolute()) {
+                        throw new IllegalArgumentException(
+                            "C2paTileSink option 'trust-anchor' must be an absolute URI, got '" + trimmed + "'");
+                    }
+                } catch (java.net.URISyntaxException e) {
+                    throw new IllegalArgumentException(
+                        "C2paTileSink option 'trust-anchor' must be an absolute URI, got '" + trimmed + "'", e);
+                }
+                this.trustAnchor = trimmed;
+            }
+        }
 
         if ((certPath == null) != (keyPath == null)) {
             throw new IllegalArgumentException(
@@ -130,6 +158,80 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     @Override
     public String getName() {
         return "c2pa";
+    }
+
+    /**
+     * Advertises C2PA support in {@code info.json} via
+     * {@link TileSink#C2PA_PROFILE_URI}.
+     *
+     * <ul>
+     *   <li>V3: prepends {@link TileSink#C2PA_CONTEXT_URI} to {@code @context},
+     *       adds a {@code service} entry and an {@code extraFeatures} entry.
+     *       When {@code trust-anchor} is set, it is written as the namespaced
+     *       {@code trustAnchor} property of that service entry.</li>
+     *   <li>V2: adds the profile URI to the embedded profile {@code supports}
+     *       list. A {@code trust-anchor} cannot be expressed (fixed
+     *       {@code @context}, no place for namespaced properties) and fails
+     *       with {@link IllegalArgumentException}.</li>
+     * </ul>
+     */
+    @Override
+    public InfoExtension getInfoJsonExtension(ImageInfo.IIIFVersion version) {
+        if (version == ImageInfo.IIIFVersion.V2 && trustAnchor != null) {
+            throw new IllegalArgumentException(
+                "C2PA 'trust-anchor' requires IIIF Image API 3: Image API 2 has no way "
+                + "to express namespaced info.json options (fixed @context).");
+        }
+        java.util.Map<String, Object> service = new java.util.LinkedHashMap<>();
+        service.put("id", C2PA_PROFILE_URI);
+        service.put("type", "Service");
+        service.put("profile", C2PA_PROFILE_URI);
+        InfoExtension own;
+        if (version == ImageInfo.IIIFVersion.V3) {
+            if (trustAnchor != null) {
+                service.put("trustAnchor", trustAnchor);
+            }
+            own = new InfoExtension(
+                java.util.List.of(C2PA_CONTEXT_URI),
+                java.util.List.of(java.util.Collections.unmodifiableMap(service)),
+                java.util.List.of(C2PA_PROFILE_URI));
+        } else {
+            own = new InfoExtension(
+                java.util.List.of(),
+                java.util.List.of(),
+                java.util.List.of(C2PA_PROFILE_URI));
+        }
+        return own.mergedWith(delegateExtension(version));
+    }
+
+    /**
+     * Returns the delegate sink's extension so stacked sinks (e.g. C2PA over
+     * UltraHDR) advertise both capabilities. Empty when the delegate is the
+     * plain default sink.
+     */
+    private InfoExtension delegateExtension(ImageInfo.IIIFVersion version) {
+        try {
+            if (delegate != null) {
+                if (delegate.getName().equals(getName())) {
+                    return InfoExtension.empty();
+                }
+                return delegate.getInfoJsonExtension(version);
+            }
+            if (delegateName == null || delegateName.equals("default") || delegateName.equals(getName())) {
+                return InfoExtension.empty();
+            }
+            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
+            if (template == null) {
+                return InfoExtension.empty();
+            }
+            TileSink instance = template.getClass().getConstructor().newInstance();
+            return instance.getInfoJsonExtension(version);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.debug("Cannot resolve delegate info.json extension: {}", e.getMessage());
+            return InfoExtension.empty();
+        }
     }
 
     /** Default constructor (used by ServiceLoader / reflective instantiation). */

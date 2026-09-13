@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Christian Mahnke
-package de.christianmahnke.iiif.fliiifenleger.source;
+package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import java.io.Serializable;
 
@@ -24,13 +24,15 @@ public record GainMapData(byte[] gainmapJpeg, String metadataJson,
 
     /**
      * Metadata map key (value: {@link java.awt.image.BufferedImage}) under
-     * which the {@code Tiler} passes the cropped gain map tile to the sink.
+     * which the {@link GainMapTileEnricher} passes the cropped gain map tile
+     * to the sink.
      */
     public static final String META_IMAGE = "gainmap.image";
 
     /**
-     * Metadata map key (value: {@link String}) under which the {@code Tiler}
-     * passes the gain map metadata JSON to the sink.
+     * Metadata map key (value: {@link String}) under which the
+     * {@link GainMapTileEnricher} passes the gain map metadata JSON to the
+     * sink.
      */
     public static final String META_METADATA = "gainmap.metadata";
 

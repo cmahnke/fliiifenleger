@@ -1,0 +1,6 @@
+{
+  "@context": {
+    "hdr": "https://christianmahnke.de/iiif/hdr/",
+    "Service": "http://iiif.io/api/image#Service"
+  }
+}

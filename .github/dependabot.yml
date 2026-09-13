@@ -18,6 +18,7 @@ updates:
       - "core/"
       - "cli/"
       - "jc2pa/"
+      - "ultrahdr/"
     schedule:
       interval: "weekly"
     groups:

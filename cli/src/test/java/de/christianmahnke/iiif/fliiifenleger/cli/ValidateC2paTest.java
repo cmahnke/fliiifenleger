@@ -16,6 +16,7 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -97,13 +98,14 @@ class ValidateC2paTest {
                                String tilePath2, byte[] tile2) {
         String infoJson = """
             {
+              "@context": "http://iiif.io/api/image/2/context.json",
               "@id": "%s",
               "@type": "iiif:Image",
               "protocol": "http://iiif.io/api/image",
               "width": %d,
               "height": %d,
               "tiles": [{"width": %d, "scaleFactors": [1]}],
-              "profile": "http://iiif.io/api/image/2/level0.json"
+              "profile": ["http://iiif.io/api/image/2/level0.json"]
             }
             """.formatted(wiremock.baseUrl() + "/iiif", FULL_W, FULL_H, TILE);
 
@@ -113,6 +115,12 @@ class ValidateC2paTest {
             .willReturn(aResponse().withBody(tile1).withHeader("Content-Type", "image/jpeg")));
         wiremock.stubFor(get(urlEqualTo(tilePath2))
             .willReturn(aResponse().withBody(tile2).withHeader("Content-Type", "image/jpeg")));
+    }
+
+    @Test
+    @DisplayName("tests run headless")
+    void runsHeadless() {
+        assertThat(GraphicsEnvironment.isHeadless()).isTrue();
     }
 
     @Test

@@ -6,8 +6,6 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
-import de.christianmahnke.iiif.fliiifenleger.source.GainMapData;
-import de.christianmahnke.iiif.fliiifenleger.source.GainMapSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 

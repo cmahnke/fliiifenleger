@@ -117,8 +117,9 @@ Generates IIIF tiles from one or more local image files.
 | `--sink-opt <k=v>` | | Set an option for the image sink (e.g., --sink-opt key=value). | |
 | `--source <name>` | `-s` | The image source implementation to use. Available: `default`, `ultrahdr` (UltraHDR JPEGs with gain maps), `iiif` (re-tile a remote IIIF image), `jxl` (JPEG XL, needs libjxl), `stacked` (source chain, see Advanced Usage), `filter` (standalone filter, see Advanced Usage). | `default` |
 | `--source-opt <k=v>` | | Set an option for the image source (e.g., --source-opt key=value). | |
-| `--tile-size <size>` | `-t` | Set the tile size. | `1024` |
+| `--tile-size <size>` | `-t` | Set the tile size. | `512` |
 | `--zoom-levels <num>` | `-z` | Set the number of zoom levels. Set to `0` to auto-calculate. | `0` |
+| `--validate-info` | | Validate the generated info.json against the JSON Schema for the requested IIIF version. Fails the generation on mismatch. | off |
 
 **Example:**
 ```sh
@@ -135,6 +136,7 @@ Validates a IIIF endpoint by reassembling the image from its tiles and saving it
 | `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). | `jpg` |
 | `--output <path>` | `-o` | **Required.** Path to save the reassembled image. | |
 | `--check-c2pa` | | Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest. | |
+| `--schema <mode>` | | Validate info.json against its JSON Schema before reassembly. Values: `auto` (detect from `@context`), `2`, `3`, `off`. Exit code 1 on mismatch. | `auto` |
 
 **Example:**
 ```sh
@@ -153,6 +155,25 @@ Displays information about available components.
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar info list-sources
 ```
+
+### `info.json` validation
+
+`generate --validate-info` validates each generated `info.json` against the
+JSON Schema for the requested IIIF version and fails the generation on
+mismatch. `validate` checks the remote `info.json` against its schema
+(`--schema auto|2|3|off`, default `auto`) before reassembling the tiles.
+
+The schemas live in `core/src/main/resources/schema/`:
+`image-api-2-info.json` and `image-api-3-info.json` (JSON Schema draft
+2020-12). They cover the required IIIF properties plus the fliiifenleger
+extensions: the V3 schema contains `$defs` additions for the
+`https://christianmahnke.de/iiif/c2pa/` service (with optional `trustAnchor`)
+and the `https://christianmahnke.de/iiif/hdr/` service; the V2 schema models
+both as plain URIs in the embedded profile `supports` list and rejects
+namespaced properties such as `trustAnchor`. The matching JSON-LD contexts
+are in `core/src/main/resources/context/`. Validation is implemented in
+`InfoJsonValidator` (core) and additionally enforces that a V3 `@context`
+array ends with the IIIF context.
 
 ## UltraHDR (gain map) tiling
 
@@ -179,6 +200,10 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
 * Options: `delegate` (delegate sink, default `default`), `runtime` (WASM
   engine, default `auto`), `quality` (primary re-encode, default `90`),
   `gainmap-quality` (default `85`).
+* The sink advertises HDR capability in `info.json` via
+  `https://christianmahnke.de/iiif/hdr/`: a `service` entry (plus
+  `extraFeatures` entry and prepended JSON-LD context) for Image API 3, or an
+  entry in the embedded profile `supports` list for Image API 2.
 
 **Technical notes:** like C2PA, the gain map codec lives in its own module
 (`ultrahdr`): the pure-Rust [`ultrahdr-rs`](https://github.com/imazen/ultrahdr)
@@ -217,6 +242,12 @@ coordinates (`org.projektemacher.iiif.region` assertion).
 | `tsa` | Timestamp authority URL (only with `cert`/`key`). | – |
 | `cert-name` | Common name for the ephemeral test certificate (only without `cert`/`key`). | `fliiifenleger` |
 | `claim-generator` | Claim generator string written into the manifest. | `fliiifenleger` |
+| `trust-anchor` | Absolute URI advertised as `trustAnchor` in the `https://christianmahnke.de/iiif/c2pa/` service entry of a V3 `info.json`. **Requires `--iiif-version V3`** — generation fails fast with Image API 2, which has no place for namespaced options (fixed `@context`). | – |
+
+Every `c2pa` run advertises `https://christianmahnke.de/iiif/c2pa/` in
+`info.json`: a `service` entry (plus `extraFeatures` entry and prepended
+JSON-LD context) for Image API 3, or an entry in the embedded profile
+`supports` list for Image API 2 (only without `trust-anchor`).
 
 Without `cert`/`key`, tiles are signed with an **ephemeral self-signed
 certificate** — useful for tests and demos, but the manifests will not
