@@ -526,9 +526,7 @@ reference of every module.  The versions-maven-plugin updates all of them in
 one pass:
 
 ```sh
-mvn --batch-mode org.codehaus.mojo:versions-maven-plugin:2.17.1:set \
-  -DnewVersion=0.2.0-SNAPSHOT \
-  -DgenerateBackupPoms=false
+mvn --batch-mode org.codehaus.mojo:versions-maven-plugin:2.17.1:set -DnewVersion=0.4.0-SNAPSHOT -DgenerateBackupPoms=false
 ```
 
 This is the same mechanism the `release.yml` workflow uses (with the tag
