@@ -524,8 +524,11 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
   Packages, and attaches the standalone JARs to the GitHub release.
 * `maven-site.yml` — publishes the generated Maven site (this documentation)
   to GitHub Pages on every push to `main`.
-* `docker.yml` — builds and publishes the Docker images
-  (`Dockerfile`, `Dockerfile.ubuntu`).
+* `docker.yml` — builds `Dockerfile` and publishes
+  `ghcr.io/cmahnke/fliiifenleger/cli`: on a `v*` tag as `X.Y.Z`, `X.Y` and
+  `latest` (with the release version baked into the CLI jar), on `main` as
+  `snapshot`; pull requests only validate the build without pushing.
+  (`Dockerfile.ubuntu` is local-only, built by no workflow.)
 
 ### Changing the project version
 
