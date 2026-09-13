@@ -131,26 +131,35 @@ class C2paWasmTest extends AbstractWasmTest {
     }
 
     /**
-     * Reads the c2pa version pinned in the {@code [dependencies.c2pa]}
-     * section of the crate's {@code Cargo.toml}.
+     * Reads the actually built c2pa version from the crate's
+     * {@code Cargo.lock} ({@code [[package]] name = "c2pa"}).
+     *
+     * <p>Must be the lock file, not {@code Cargo.toml}: the TOML only states
+     * the minimum compatible requirement (e.g. {@code "0.90.20"}), while the
+     * WASM module is built against the resolved version (e.g.
+     * {@code "0.90.21"}).
      */
     private static String readPinnedC2paVersion() throws IOException {
-        Path cargoToml = Path.of("src/main/rust/Cargo.toml");
-        if (!Files.exists(cargoToml)) {
-            cargoToml = Path.of("jc2pa/src/main/rust/Cargo.toml");
+        Path cargoLock = Path.of("src/main/rust/Cargo.lock");
+        if (!Files.exists(cargoLock)) {
+            cargoLock = Path.of("jc2pa/src/main/rust/Cargo.lock");
         }
-        boolean inC2paSection = false;
-        for (String line : Files.readAllLines(cargoToml)) {
+        boolean inC2paPackage = false;
+        for (String line : Files.readAllLines(cargoLock)) {
             String trimmed = line.trim();
-            if (trimmed.startsWith("[")) {
-                inC2paSection = trimmed.equals("[dependencies.c2pa]");
+            if (trimmed.equals("[[package]]")) {
+                inC2paPackage = false;
                 continue;
             }
-            if (inC2paSection && trimmed.startsWith("version")) {
+            if (trimmed.equals("name = \"c2pa\"")) {
+                inC2paPackage = true;
+                continue;
+            }
+            if (inC2paPackage && trimmed.startsWith("version")) {
                 return trimmed.substring(trimmed.indexOf('"') + 1,
                                          trimmed.lastIndexOf('"'));
             }
         }
-        throw new IOException("c2pa version not found in Cargo.toml");
+        throw new IOException("c2pa version not found in Cargo.lock");
     }
 }

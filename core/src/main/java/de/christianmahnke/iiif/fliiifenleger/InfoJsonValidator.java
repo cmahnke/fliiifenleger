@@ -2,12 +2,12 @@
 // Copyright (c) 2026 Christian Mahnke
 package de.christianmahnke.iiif.fliiifenleger;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import com.networknt.schema.Error;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Validates {@code info.json} documents against the bundled JSON Schemas for
@@ -45,6 +44,9 @@ public final class InfoJsonValidator {
     private static final String V3_SCHEMA_RESOURCE = "/schema/image-api-3-info.json";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final Schema V2_SCHEMA = loadSchema(V2_SCHEMA_RESOURCE);
+    private static final Schema V3_SCHEMA = loadSchema(V3_SCHEMA_RESOURCE);
 
     private InfoJsonValidator() {
     }
@@ -100,9 +102,9 @@ public final class InfoJsonValidator {
                     + " but " + expected.getShortName() + " was expected");
         }
 
-        JsonSchema schema = schemaFor(effective);
-        Set<ValidationMessage> violations = schema.validate(node);
-        for (ValidationMessage v : violations) {
+        Schema schema = schemaFor(effective);
+        List<Error> violations = schema.validate(node);
+        for (Error v : violations) {
             String location = v.getInstanceLocation() == null ? "" : v.getInstanceLocation().toString();
             errors.add(location.isEmpty() ? v.getMessage() : location + ": " + v.getMessage());
         }
@@ -212,14 +214,17 @@ public final class InfoJsonValidator {
         return errors;
     }
 
-    private static JsonSchema schemaFor(ImageInfo.IIIFVersion version) {
-        String resource = version == ImageInfo.IIIFVersion.V3 ? V3_SCHEMA_RESOURCE : V2_SCHEMA_RESOURCE;
-        JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
+    private static Schema schemaFor(ImageInfo.IIIFVersion version) {
+        return version == ImageInfo.IIIFVersion.V3 ? V3_SCHEMA : V2_SCHEMA;
+    }
+
+    private static Schema loadSchema(String resource) {
+        SchemaRegistry registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
         try (InputStream in = InfoJsonValidator.class.getResourceAsStream(resource)) {
             if (in == null) {
                 throw new IllegalStateException("Bundled schema not found: " + resource);
             }
-            return factory.getSchema(in);
+            return registry.getSchema(in);
         } catch (IOException e) {
             throw new IllegalStateException("Cannot load bundled schema: " + resource, e);
         }
@@ -245,9 +250,8 @@ public final class InfoJsonValidator {
             if (node.has(key)) {
                 return true;
             }
-            var fields = node.fields();
-            while (fields.hasNext()) {
-                if (findKey(fields.next().getValue(), key)) {
+            for (var field : node.properties()) {
+                if (findKey(field.getValue(), key)) {
                     return true;
                 }
             }

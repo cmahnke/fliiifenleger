@@ -65,10 +65,10 @@ The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic
 
     **Useful properties and profiles:**
     * `-DskipTests` — skip the test suite.
-    * `-Dmaven.cargo.skip=true` — do not rebuild the WASM modules (uses the committed `c2pa_wasm.wasm` / `ultrahdr_wasm.wasm`).
+    * `-Dmaven.cargo.skip=true` — do not rebuild the WASM modules (requires previously built `c2pa_wasm.wasm` / `ultrahdr_wasm.wasm` files in the respective `src/main/resources/wasm/` directories; the binaries are build artifacts and not part of the repo).
     * `-Dmaven.rustup.skip=true` — also skip the rustup target check.
     * `-Dcargo.path` / `-Drustup.path` — override the cargo/rustup binaries (toolchains not on the `PATH`).
-    * Maven profiles: `dev` (debug WASM build), `ci` (Rust tests and clippy), `skip-rust` (use the committed WASM) — all in the `jc2pa` module.
+    * Maven profiles: `dev` (debug WASM build), `ci` (Rust tests and clippy), `skip-rust` (skip the Rust build, same requirement as `maven.cargo.skip`) — all in the `jc2pa` module.
 
 ## Installation
 
