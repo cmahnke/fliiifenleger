@@ -43,7 +43,7 @@
         <main.class>de.christianmahnke.jc2pa.Main</main.class>
 
         <!-- Dependency versions -->
-        <bouncycastle.version>1.84</bouncycastle.version>
+        <bouncycastle.version>1.85</bouncycastle.version>
     </properties>
 
     <!-- ─────────────────────────────────────────────── -->
