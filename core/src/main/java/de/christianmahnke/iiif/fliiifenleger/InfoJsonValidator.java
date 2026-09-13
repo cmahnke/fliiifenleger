@@ -19,16 +19,17 @@ import java.util.List;
 
 /**
  * Validates {@code info.json} documents against the bundled JSON Schemas for
- * IIIF Image API 2 and 3, including the fliiifenleger HDR and C2PA extensions.
+ * IIIF Image API 2 and 3.
  *
- * <p>Schemas live in {@code core/src/main/resources/schema/}:
- * {@code image-api-2-info.json} and {@code image-api-3-info.json}. The V3
- * schema contains the {@code $defs} additions for the
- * {@code https://christianmahnke.de/iiif/c2pa/} service (with optional
- * {@code trustAnchor}) and the {@code https://christianmahnke.de/iiif/hdr/}
- * service. The V2 schema models extensions as plain URIs in the embedded
- * profile {@code supports} list and rejects namespaced properties such as
- * {@code trustAnchor}.
+ * <p>Base schemas live in {@code core/src/main/resources/schema/}:
+ * {@code image-api-2-info.json} and {@code image-api-3-info.json}. Service
+ * extensions (C2PA, HDR, …) ship their own schema fragments in their modules
+ * (see {@link de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension})
+ * which are composed with the V3 base schema via {@code allOf}; the V2
+ * schema models extensions as plain URIs in the embedded profile
+ * {@code supports} list and rejects namespaced properties such as
+ * {@code trustAnchor}. On a core-only classpath (no extensions discovered)
+ * extension service entries validate as generic services.
  *
  * <p>Beyond structural validation, IIIF-specific ordering rules that JSON
  * Schema expresses poorly are checked in Java: a V3 {@code @context} array
@@ -45,8 +46,12 @@ public final class InfoJsonValidator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final Schema V2_SCHEMA = loadSchema(V2_SCHEMA_RESOURCE);
-    private static final Schema V3_SCHEMA = loadSchema(V3_SCHEMA_RESOURCE);
+    /** Discovered service extensions (C2PA, HDR, …); empty on a core-only classpath. */
+    private static final List<de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension> EXTENSIONS =
+            de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension.loadAll();
+
+    private static final Schema V2_SCHEMA = loadComposed(V2_SCHEMA_RESOURCE, List.of());
+    private static final Schema V3_SCHEMA = loadComposed(V3_SCHEMA_RESOURCE, EXTENSIONS);
 
     private InfoJsonValidator() {
     }
@@ -182,15 +187,12 @@ public final class InfoJsonValidator {
             if (service != null && service.isArray()) {
                 for (JsonNode entry : service) {
                     String profile = textOrNull(entry.get("profile"));
-                    if (de.christianmahnke.iiif.fliiifenleger.sink.TileSink.C2PA_PROFILE_URI.equals(profile)
-                            && !contexts.contains(de.christianmahnke.iiif.fliiifenleger.sink.TileSink.C2PA_CONTEXT_URI)) {
-                        errors.add("service: C2PA service requires @context to contain "
-                                + de.christianmahnke.iiif.fliiifenleger.sink.TileSink.C2PA_CONTEXT_URI);
-                    }
-                    if (de.christianmahnke.iiif.fliiifenleger.sink.TileSink.HDR_PROFILE_URI.equals(profile)
-                            && !contexts.contains(de.christianmahnke.iiif.fliiifenleger.sink.TileSink.HDR_CONTEXT_URI)) {
-                        errors.add("service: HDR service requires @context to contain "
-                                + de.christianmahnke.iiif.fliiifenleger.sink.TileSink.HDR_CONTEXT_URI);
+                    for (var extension : EXTENSIONS) {
+                        if (extension.profileUri().equals(profile)
+                                && !contexts.contains(extension.contextUri())) {
+                            errors.add("service: service '" + profile + "' requires @context to contain "
+                                    + extension.contextUri());
+                        }
                     }
                     JsonNode anchor = entry.get("trustAnchor");
                     if (anchor != null && (!anchor.isTextual() || !isAbsoluteUri(anchor.asText()))) {
@@ -218,16 +220,30 @@ public final class InfoJsonValidator {
         return version == ImageInfo.IIIFVersion.V3 ? V3_SCHEMA : V2_SCHEMA;
     }
 
-    private static Schema loadSchema(String resource) {
-        SchemaRegistry registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
-        try (InputStream in = InfoJsonValidator.class.getResourceAsStream(resource)) {
+    private static Schema loadComposed(String baseResource,
+                                       List<de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension> extensions) {
+        JsonNode base;
+        try (InputStream in = InfoJsonValidator.class.getResourceAsStream(baseResource)) {
             if (in == null) {
-                throw new IllegalStateException("Bundled schema not found: " + resource);
+                throw new IllegalStateException("Bundled schema not found: " + baseResource);
             }
-            return registry.getSchema(in);
+            base = MAPPER.readTree(in);
         } catch (IOException e) {
-            throw new IllegalStateException("Cannot load bundled schema: " + resource, e);
+            throw new IllegalStateException("Cannot load bundled schema: " + baseResource, e);
         }
+        SchemaRegistry registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+        if (extensions.isEmpty()) {
+            return registry.getSchema(base);
+        }
+        var allOf = MAPPER.createArrayNode();
+        allOf.add(base);
+        for (var extension : extensions) {
+            allOf.add(extension.schemaFragment());
+        }
+        var composed = MAPPER.createObjectNode();
+        composed.put("$schema", "https://json-schema.org/draft/2020-12/schema");
+        composed.set("allOf", allOf);
+        return registry.getSchema(composed);
     }
 
     private static String textOrNull(JsonNode node) {

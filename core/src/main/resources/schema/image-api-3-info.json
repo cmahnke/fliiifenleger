@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://christianmahnke.de/iiif/schema/image-api-3-info.json",
-  "title": "IIIF Image API 3.0 info.json (fliiifenleger, with HDR/C2PA extensions)",
+  "title": "IIIF Image API 3.0 info.json (fliiifenleger base schema)",
+  "description": "Extension service entries (e.g. C2PA, HDR) are validated as generic services here; their strict schemas are contributed per-module and composed via allOf (see ServiceExtension).",
   "type": "object",
   "required": ["@context", "id", "type", "protocol", "profile", "width", "height"],
   "properties": {
@@ -70,13 +71,7 @@
     },
     "service": {
       "type": "array",
-      "items": {
-        "anyOf": [
-          { "$ref": "#/$defs/c2paService" },
-          { "$ref": "#/$defs/hdrService" },
-          { "$ref": "#/$defs/genericService" }
-        ]
-      }
+      "items": { "$ref": "#/$defs/genericService" }
     }
   },
   "additionalProperties": true,
@@ -88,33 +83,6 @@
         "id": { "type": "string", "format": "uri" },
         "type": { "type": "string" },
         "profile": { "type": "string" }
-      },
-      "additionalProperties": true
-    },
-    "c2paService": {
-      "title": "C2PA extension service (https://christianmahnke.de/iiif/c2pa/)",
-      "type": "object",
-      "required": ["id", "type", "profile"],
-      "properties": {
-        "id": { "type": "string", "format": "uri" },
-        "type": { "type": "string" },
-        "profile": { "const": "https://christianmahnke.de/iiif/c2pa/" },
-        "trustAnchor": {
-          "description": "Advertised C2PA trust anchor (absolute URI). V3 only.",
-          "type": "string",
-          "format": "uri"
-        }
-      },
-      "additionalProperties": true
-    },
-    "hdrService": {
-      "title": "HDR extension service (https://christianmahnke.de/iiif/hdr/)",
-      "type": "object",
-      "required": ["id", "type", "profile"],
-      "properties": {
-        "id": { "type": "string", "format": "uri" },
-        "type": { "type": "string" },
-        "profile": { "const": "https://christianmahnke.de/iiif/hdr/" }
       },
       "additionalProperties": true
     }

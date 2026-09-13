@@ -37,39 +37,6 @@ class InfoJsonValidatorTest {
             }
             """;
 
-    private static final String VALID_V3_C2PA_ANCHOR = """
-            {
-              "@context": ["https://christianmahnke.de/iiif/c2pa/context.json", "http://iiif.io/api/image/3/context.json"],
-              "id": "http://localhost:8887/iiif/page011",
-              "type": "ImageService3",
-              "protocol": "http://iiif.io/api/image",
-              "profile": "level2",
-              "width": 800,
-              "height": 600,
-              "tiles": [{"width": 512, "scaleFactors": [1, 2]}],
-              "extraFeatures": ["https://christianmahnke.de/iiif/c2pa/"],
-              "service": [{"id": "https://christianmahnke.de/iiif/c2pa/", "type": "Service",
-                           "profile": "https://christianmahnke.de/iiif/c2pa/",
-                           "trustAnchor": "https://example.org/trust/anchor"}]
-            }
-            """;
-
-    private static final String VALID_V3_HDR = """
-            {
-              "@context": ["https://christianmahnke.de/iiif/hdr/context.json", "http://iiif.io/api/image/3/context.json"],
-              "id": "http://localhost:8887/iiif/page011",
-              "type": "ImageService3",
-              "protocol": "http://iiif.io/api/image",
-              "profile": "level2",
-              "width": 800,
-              "height": 600,
-              "tiles": [{"width": 512, "scaleFactors": [1]}],
-              "extraFeatures": ["https://christianmahnke.de/iiif/hdr/"],
-              "service": [{"id": "https://christianmahnke.de/iiif/hdr/", "type": "Service",
-                           "profile": "https://christianmahnke.de/iiif/hdr/"}]
-            }
-            """;
-
     @Test
     @DisplayName("valid V2 base document passes")
     void validV2Passes() {
@@ -96,20 +63,6 @@ class InfoJsonValidatorTest {
     }
 
     @Test
-    @DisplayName("V3 C2PA service with trustAnchor passes")
-    void v3C2paAnchorPasses() {
-        var result = InfoJsonValidator.validate(VALID_V3_C2PA_ANCHOR);
-        assertTrue(result.valid(), () -> "expected valid, got: " + result.errors());
-    }
-
-    @Test
-    @DisplayName("V3 HDR service passes")
-    void v3HdrPasses() {
-        var result = InfoJsonValidator.validate(VALID_V3_HDR);
-        assertTrue(result.valid(), () -> "expected valid, got: " + result.errors());
-    }
-
-    @Test
     @DisplayName("missing required width fails")
     void missingWidthFails() {
         String json = VALID_V3.replace("\"width\": 800,", "");
@@ -130,19 +83,19 @@ class InfoJsonValidatorTest {
     @Test
     @DisplayName("V3 @context array with IIIF context first fails (must be last)")
     void v3ContextOrderFails() {
-        String json = VALID_V3_C2PA_ANCHOR.replace(
-                "[\"https://christianmahnke.de/iiif/c2pa/context.json\", \"http://iiif.io/api/image/3/context.json\"]",
-                "[\"http://iiif.io/api/image/3/context.json\", \"https://christianmahnke.de/iiif/c2pa/context.json\"]");
+        String json = VALID_V3.replace(
+                "\"http://iiif.io/api/image/3/context.json\"",
+                "[\"http://iiif.io/api/image/3/context.json\", \"https://example.org/ext/context.json\"]");
         var result = InfoJsonValidator.validate(json);
         assertFalse(result.valid());
     }
 
     @Test
-    @DisplayName("V3 C2PA service without its context fails")
-    void v3C2paWithoutContextFails() {
-        String json = VALID_V3_C2PA_ANCHOR.replace(
-                "[\"https://christianmahnke.de/iiif/c2pa/context.json\", \"http://iiif.io/api/image/3/context.json\"]",
-                "\"http://iiif.io/api/image/3/context.json\"");
+    @DisplayName("V3 service trustAnchor that is not a URI fails")
+    void v3TrustAnchorMustBeUri() {
+        String json = VALID_V3.replace("\"tiles\"",
+                "\"service\": [{\"id\": \"https://example.org/s\", \"type\": \"Service\", "
+                + "\"profile\": \"https://example.org/ext/\", \"trustAnchor\": \"not-a-uri\"}], \"tiles\"");
         var result = InfoJsonValidator.validate(json);
         assertFalse(result.valid());
     }

@@ -56,6 +56,11 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
 
     private static final Logger log = LoggerFactory.getLogger(UltraHdrTileSink.class);
 
+    /** Profile URI advertising UltraHDR gain-map tiles. */
+    public static final String HDR_PROFILE_URI = "https://christianmahnke.de/iiif/hdr/";
+    /** JSON-LD context for the HDR extension (V3 only). */
+    public static final String HDR_CONTEXT_URI = "https://christianmahnke.de/iiif/hdr/context.json";
+
     private String delegateName    = "default";
     private String engine          = null;  // null → WasmEngine auto selection
     private int    quality         = 90;
@@ -117,10 +122,10 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
 
     /**
      * Advertises UltraHDR support in {@code info.json} via
-     * {@link TileSink#HDR_PROFILE_URI}.
+     * {@link #HDR_PROFILE_URI}.
      *
      * <ul>
-     *   <li>V3: prepends {@link TileSink#HDR_CONTEXT_URI} to {@code @context},
+     *   <li>V3: prepends {@link #HDR_CONTEXT_URI} to {@code @context},
      *       adds a {@code service} entry and an {@code extraFeatures} entry.</li>
      *   <li>V2: adds the profile URI to the embedded profile {@code supports}
      *       list (plain URI entries are allowed by the V2 spec).</li>

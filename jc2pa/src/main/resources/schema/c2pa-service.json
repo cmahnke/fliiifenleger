@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://christianmahnke.de/iiif/schema/c2pa-service.json",
+  "title": "C2PA service extension for IIIF Image API 3.0 info.json",
+  "description": "Constrains only service entries claiming the C2PA profile; all other entries pass vacuously. Composed with the base schema via allOf (see ServiceExtension).",
+  "type": "object",
+  "properties": {
+    "service": {
+      "type": "array",
+      "items": {
+        "if": {
+          "type": "object",
+          "required": ["profile"],
+          "properties": {
+            "profile": { "const": "https://christianmahnke.de/iiif/c2pa/" }
+          }
+        },
+        "then": { "$ref": "#/$defs/c2paService" }
+      }
+    }
+  },
+  "$defs": {
+    "c2paService": {
+      "type": "object",
+      "required": ["id", "type", "profile"],
+      "properties": {
+        "id": { "type": "string", "format": "uri" },
+        "type": { "type": "string" },
+        "profile": { "const": "https://christianmahnke.de/iiif/c2pa/" },
+        "trustAnchor": {
+          "description": "Advertised C2PA trust anchor (absolute URI). V3 only.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

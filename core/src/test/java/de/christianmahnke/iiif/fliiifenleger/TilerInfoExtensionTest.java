@@ -102,17 +102,22 @@ class TilerInfoExtensionTest {
         return new ImageInfo(new StubSource(), 32, 32, 2, "http://localhost:8887/iiif/", version);
     }
 
+    /** Example extension URIs (merge logic is URI-agnostic). */
+    private static final String EXT_PROFILE = "https://example.org/ext/";
+    private static final String EXT_CONTEXT = "https://example.org/ext/context.json";
+    private static final String OTHER_FEATURE = "https://example.org/other/";
+
     @Test
     @DisplayName("V3 merges contexts, services and extraFeatures with IIIF context last")
     void v3MergesAll() {
-        Map<String, Object> service = Map.of("id", TileSink.C2PA_PROFILE_URI, "type", "Service",
-                "profile", TileSink.C2PA_PROFILE_URI, "trustAnchor", "https://example.org/trust");
+        Map<String, Object> service = Map.of("id", EXT_PROFILE, "type", "Service",
+                "profile", EXT_PROFILE, "trustAnchor", "https://example.org/trust");
         TileSink.InfoExtension ext = new TileSink.InfoExtension(
-                List.of(TileSink.C2PA_CONTEXT_URI), List.of(service), List.of(TileSink.C2PA_PROFILE_URI));
+                List.of(EXT_CONTEXT), List.of(service), List.of(EXT_PROFILE));
         Map<String, Object> json = Tiler.buildInfoJson(info(ImageInfo.IIIFVersion.V3), ext);
 
-        assertEquals(List.of(TileSink.C2PA_CONTEXT_URI, "http://iiif.io/api/image/3/context.json"), json.get("@context"));
-        assertEquals(List.of(TileSink.C2PA_PROFILE_URI), json.get("extraFeatures"));
+        assertEquals(List.of(EXT_CONTEXT, "http://iiif.io/api/image/3/context.json"), json.get("@context"));
+        assertEquals(List.of(EXT_PROFILE), json.get("extraFeatures"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> services = (List<Map<String, Object>>) json.get("service");
         assertEquals(1, services.size());
@@ -123,7 +128,7 @@ class TilerInfoExtensionTest {
     @DisplayName("V2 maps features into the embedded profile supports list")
     void v2MapsFeaturesToSupports() {
         TileSink.InfoExtension ext = new TileSink.InfoExtension(
-                List.of(), List.of(), List.of(TileSink.HDR_PROFILE_URI));
+                List.of(), List.of(), List.of(OTHER_FEATURE));
         Map<String, Object> json = Tiler.buildInfoJson(info(ImageInfo.IIIFVersion.V2), ext);
 
         assertEquals("http://iiif.io/api/image/2/context.json", json.get("@context"));
@@ -132,14 +137,14 @@ class TilerInfoExtensionTest {
         assertEquals("http://iiif.io/api/image/2/level2.json", profile.get(0));
         @SuppressWarnings("unchecked")
         Map<String, Object> embedded = (Map<String, Object>) profile.get(1);
-        assertEquals(List.of(TileSink.HDR_PROFILE_URI), embedded.get("supports"));
+        assertEquals(List.of(OTHER_FEATURE), embedded.get("supports"));
     }
 
     @Test
     @DisplayName("V2 with extension contexts fails (no place for namespaced options)")
     void v2ContextsFail() {
         TileSink.InfoExtension ext = new TileSink.InfoExtension(
-                List.of(TileSink.C2PA_CONTEXT_URI), List.of(), List.of(TileSink.C2PA_PROFILE_URI));
+                List.of(EXT_CONTEXT), List.of(), List.of(EXT_PROFILE));
         assertThrows(IllegalArgumentException.class,
                 () -> Tiler.buildInfoJson(info(ImageInfo.IIIFVersion.V2), ext));
     }

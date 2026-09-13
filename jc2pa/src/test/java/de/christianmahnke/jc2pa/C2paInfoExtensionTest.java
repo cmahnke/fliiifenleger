@@ -20,10 +20,10 @@ class C2paInfoExtensionTest {
     void v3DefaultAdvertisesService() {
         C2paTileSink sink = new C2paTileSink();
         TileSink.InfoExtension ext = sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V3);
-        assertThat(ext.contexts()).containsExactly(TileSink.C2PA_CONTEXT_URI);
-        assertThat(ext.features()).containsExactly(TileSink.C2PA_PROFILE_URI);
+        assertThat(ext.contexts()).containsExactly(C2paTileSink.C2PA_CONTEXT_URI);
+        assertThat(ext.features()).containsExactly(C2paTileSink.C2PA_PROFILE_URI);
         assertThat(ext.services()).hasSize(1);
-        assertThat(ext.services().get(0).get("profile")).isEqualTo(TileSink.C2PA_PROFILE_URI);
+        assertThat(ext.services().get(0).get("profile")).isEqualTo(C2paTileSink.C2PA_PROFILE_URI);
         assertThat(ext.services().get(0)).doesNotContainKey("trustAnchor");
     }
 
@@ -42,7 +42,7 @@ class C2paInfoExtensionTest {
         C2paTileSink sink = new C2paTileSink();
         TileSink.InfoExtension ext = sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V2);
         assertThat(ext.contexts()).isEmpty();
-        assertThat(ext.features()).containsExactly(TileSink.C2PA_PROFILE_URI);
+        assertThat(ext.features()).containsExactly(C2paTileSink.C2PA_PROFILE_URI);
     }
 
     @Test

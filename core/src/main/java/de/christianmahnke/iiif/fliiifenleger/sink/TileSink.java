@@ -14,14 +14,6 @@ import java.util.Map;
  * A sink for writing generated IIIF image tiles.
  */
 public interface TileSink {
-    /** Profile URI advertising C2PA-signed tiles (V3 service + V2 supports entry). */
-    String C2PA_PROFILE_URI = "https://christianmahnke.de/iiif/c2pa/";
-    /** JSON-LD context for the C2PA extension (V3 only, prepended to {@code @context}). */
-    String C2PA_CONTEXT_URI = "https://christianmahnke.de/iiif/c2pa/context.json";
-    /** Profile URI advertising UltraHDR gain-map tiles. */
-    String HDR_PROFILE_URI = "https://christianmahnke.de/iiif/hdr/";
-    /** JSON-LD context for the HDR extension (V3 only). */
-    String HDR_CONTEXT_URI = "https://christianmahnke.de/iiif/hdr/context.json";
     /**
      * Saves a given image tile to the specified path.
      *

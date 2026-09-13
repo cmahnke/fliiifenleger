@@ -17,10 +17,10 @@ class UltraHdrInfoExtensionTest {
     void v3AdvertisesHdrService() {
         UltraHdrTileSink sink = new UltraHdrTileSink();
         TileSink.InfoExtension ext = sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V3);
-        assertThat(ext.contexts()).containsExactly(TileSink.HDR_CONTEXT_URI);
-        assertThat(ext.features()).containsExactly(TileSink.HDR_PROFILE_URI);
+        assertThat(ext.contexts()).containsExactly(UltraHdrTileSink.HDR_CONTEXT_URI);
+        assertThat(ext.features()).containsExactly(UltraHdrTileSink.HDR_PROFILE_URI);
         assertThat(ext.services()).hasSize(1);
-        assertThat(ext.services().get(0).get("profile")).isEqualTo(TileSink.HDR_PROFILE_URI);
+        assertThat(ext.services().get(0).get("profile")).isEqualTo(UltraHdrTileSink.HDR_PROFILE_URI);
     }
 
     @Test
@@ -30,6 +30,6 @@ class UltraHdrInfoExtensionTest {
         TileSink.InfoExtension ext = sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V2);
         assertThat(ext.contexts()).isEmpty();
         assertThat(ext.services()).isEmpty();
-        assertThat(ext.features()).containsExactly(TileSink.HDR_PROFILE_URI);
+        assertThat(ext.features()).containsExactly(UltraHdrTileSink.HDR_PROFILE_URI);
     }
 }

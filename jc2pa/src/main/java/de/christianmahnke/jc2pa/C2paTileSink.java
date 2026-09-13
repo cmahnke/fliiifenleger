@@ -77,6 +77,11 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
 
     private static final String DEFAULT_CLAIM_GENERATOR = "fliiifenleger";
 
+    /** Profile URI advertising C2PA-signed tiles (V3 service + V2 supports entry). */
+    public static final String C2PA_PROFILE_URI = "https://christianmahnke.de/iiif/c2pa/";
+    /** JSON-LD context for the C2PA extension (V3 only, prepended to {@code @context}). */
+    public static final String C2PA_CONTEXT_URI = "https://christianmahnke.de/iiif/c2pa/context.json";
+
     private String delegateName   = "default";
     private String engine         = null;   // null → WasmEngine auto selection
     private Path   certPath       = null;
@@ -162,10 +167,10 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
 
     /**
      * Advertises C2PA support in {@code info.json} via
-     * {@link TileSink#C2PA_PROFILE_URI}.
+     * {@link #C2PA_PROFILE_URI}.
      *
      * <ul>
-     *   <li>V3: prepends {@link TileSink#C2PA_CONTEXT_URI} to {@code @context},
+     *   <li>V3: prepends {@link #C2PA_CONTEXT_URI} to {@code @context},
      *       adds a {@code service} entry and an {@code extraFeatures} entry.
      *       When {@code trust-anchor} is set, it is written as the namespaced
      *       {@code trustAnchor} property of that service entry.</li>
