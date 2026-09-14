@@ -232,4 +232,27 @@ public class TilerTest {
             }
         }
     }
+
+    @Test
+    public void testCreateManifest(@TempDir Path tempDir) throws Exception {
+        File validImageFile = new File("src/test/resources/images/page011.jpg");
+        assertTrue(validImageFile.exists());
+        URL validImageUrl = validImageFile.toURI().toURL();
+        DefaultImageSource imageSource = new DefaultImageSource();
+        imageSource.load(validImageUrl);
+
+        int tileSize = 512;
+        int zoomLevels = 4;
+        String identifier = "http://localhost/iiif/";
+        ImageInfo.IIIFVersion version = ImageInfo.IIIFVersion.V2;
+        ImageInfo imageInfo = new ImageInfo(imageSource, tileSize, tileSize, zoomLevels, identifier, version);
+
+        Tiler tiler = new Tiler();
+        Path manifestPath = tiler.createManifest(imageInfo, tempDir, "http://example.org/manifest/", version);
+
+        assertTrue(Files.exists(manifestPath), "manifest.json should exist");
+        String manifestJson = Files.readString(manifestPath);
+        assertTrue(manifestJson.contains("http://example.org/manifest/"), "Base URI should be in manifest");
+        assertTrue(manifestJson.contains("sc:Manifest") || manifestJson.contains("\"type\": \"Manifest\""), "Should be a valid manifest");
+    }
 }

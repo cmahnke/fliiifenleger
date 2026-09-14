@@ -4,6 +4,8 @@ package de.christianmahnke.iiif.fliiifenleger.cli;
 
 import ch.qos.logback.classic.Level;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
+import de.christianmahnke.iiif.fliiifenleger.IiifManifest;
+import de.christianmahnke.iiif.fliiifenleger.ManifestMerger;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.TilerException;
 import de.christianmahnke.iiif.fliiifenleger.debug.IiifImageReassembler;
@@ -35,6 +37,7 @@ import java.util.concurrent.Callable;
         subcommands = {
                 Main.GenerateCommand.class,
                 Main.ValidateCommand.class,
+                Main.ManifestCommand.class,
                 CommandLine.HelpCommand.class,
                 Main.InfoCommand.class
         })
@@ -91,6 +94,12 @@ public class Main implements Runnable {
 
         @Option(names = {"-j", "--jobs"}, description = "Tile-generation worker threads per image. 0 selects automatic sizing (-Dtiler.workers, else available processors).", defaultValue = "0")
         private int jobs;
+
+        @Option(names = {"-b", "--base-uri"}, description = "Base URI for the manifest when --manifest is enabled.")
+        private String baseUri;
+
+        @Option(names = {"-m", "--manifest"}, description = "Generate a IIIF Presentation API manifest alongside tiles.")
+        private boolean manifest;
 
         @Parameters(index = "0..*", description = "Input image files to process.")
         private List<File> files;
@@ -176,6 +185,14 @@ public class Main implements Runnable {
                                 version,
                                 tileSink
                         );
+                        if (manifest && baseUri != null && !baseUri.isEmpty()) {
+                            int finalZoomLevels = zoomLevels <= 0
+                                    ? ImageInfo.calculateZoomLevels(imageSource.getWidth(), imageSource.getHeight(), tileSize)
+                                    : zoomLevels;
+                            ImageInfo imageInfo = new ImageInfo(imageSource, tileSize, tileSize,
+                                    finalZoomLevels, identifier, version);
+                            tiler.createManifest(imageInfo, output, baseUri, version);
+                        }
                         if (validateInfo) {
                             Path infoJson = output.resolve("info.json");
                             var result = de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.validate(infoJson, version);
@@ -306,6 +323,50 @@ public class Main implements Runnable {
             log.info("C2PA summary: {} signed, {} unsigned of {} tiles", signed, unsigned,
                      signed + unsigned);
             return unsigned == 0 ? 0 : 2;
+        }
+    }
+
+    @Command(name = "manifest",
+            description = "Merges IIIF Presentation API manifests and changes base URIs.",
+            mixinStandardHelpOptions = true)
+    static class ManifestCommand implements Callable<Integer> {
+
+        @Option(names = {"-b", "--base-uri"}, description = "The new base URI for the merged manifest.", required = true)
+        private String baseUri;
+
+        @Option(names = {"-v", "--version"}, description = "IIIF Presentation API version. Options are V2, V3.", defaultValue = "V2")
+        private ImageInfo.IIIFVersion version;
+
+        @Option(names = {"-o", "--output"}, description = "Path to save the merged manifest.json.")
+        private Path output;
+
+        @Parameters(index = "0..*", description = "Input manifest.json files or URLs.")
+        private List<String> inputs;
+
+        @Override
+        public Integer call() throws Exception {
+            if (inputs == null || inputs.isEmpty()) {
+                log.error("Error: No manifest inputs specified for 'manifest' command.");
+                new CommandLine(this).usage(System.out);
+                return 1;
+            }
+            if (baseUri == null || baseUri.isEmpty()) {
+                log.error("Error: --base-uri is required.");
+                return 1;
+            }
+            if (version == null) {
+                version = ImageInfo.IIIFVersion.V2;
+            }
+
+            Path outputPath = output;
+            if (output == null || output.toString().isEmpty()) {
+                outputPath = Path.of("manifest.json");
+            }
+            ManifestMerger merger = new ManifestMerger(version, baseUri);
+            ManifestMerger.mergeAndSave(inputs, version, baseUri, outputPath);
+            log.info("Merged manifest written to {} ({} manifests, {} canvases)",
+                    outputPath, merger.getManifestCount(), merger.getCanvases().size());
+            return 0;
         }
     }
 

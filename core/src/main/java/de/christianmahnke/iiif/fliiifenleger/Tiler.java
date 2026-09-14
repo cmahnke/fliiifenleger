@@ -4,6 +4,7 @@ package de.christianmahnke.iiif.fliiifenleger;
 
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.JsonNode;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileEnricher;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
@@ -35,10 +36,10 @@ public class Tiler {
      * the {@code ultrahdr} module adds the gain-map crop.  Enrichers must be
      * stateless: tiles are generated concurrently.
      */
-    private static final List<TileEnricher> TILE_ENRICHERS = loadEnrichers();
+    protected static final List<TileEnricher> TILE_ENRICHERS = loadEnrichers();
 
-    private final int defaultTileSize;
-    private final ImageInfo.IIIFVersion defaultIiifVersion;
+    protected final int defaultTileSize;
+    protected final ImageInfo.IIIFVersion defaultIiifVersion;
 
     /**
      * System property for the tile-generation worker count.  Honoured when no
@@ -50,7 +51,7 @@ public class Tiler {
      * Tile-generation worker count ({@code 0} = automatic: system property,
      * else available processors).
      */
-    private int tileWorkers = 0;
+    protected int tileWorkers = 0;
 
     protected static Map<String, ImageSource> loadSources() {
         Map<String, ImageSource> sources = new ConcurrentHashMap<>();
@@ -68,7 +69,7 @@ public class Tiler {
         return sinks;
     }
 
-    private static List<TileEnricher> loadEnrichers() {
+    protected static List<TileEnricher> loadEnrichers() {
         List<TileEnricher> enrichers = new java.util.ArrayList<>();
         ServiceLoader.load(TileEnricher.class).forEach(enrichers::add);
         if (enrichers.isEmpty()) {
@@ -137,6 +138,37 @@ public class Tiler {
             }
         }
         return Runtime.getRuntime().availableProcessors();
+    }
+
+    /**
+     * Creates a IIIF Presentation API manifest for a single image alongside tile generation.
+     *
+     * @param imageInfo The image info used to generate tiles.
+     * @param outputDir The output directory where the manifest.json will be written.
+     * @param baseUri   The base URI for the manifest.
+     * @param version   The IIIF Presentation API version (V2 or V3).
+     * @return The path to the generated manifest.json.
+     * @throws Exception if the manifest cannot be generated or written.
+     */
+    public Path createManifest(
+            ImageInfo imageInfo,
+            Path outputDir,
+            String baseUri,
+            ImageInfo.IIIFVersion version
+    ) throws Exception {
+        IiifManifest manifest = new IiifManifest(version, baseUri, imageInfo.getIdentifier());
+        String imagePath = imageInfo.getImage().getUrl().getPath();
+        String imageId = imageInfo.getIdentifier() + imagePath.substring(imagePath.lastIndexOf('/') + 1)
+                .replaceFirst("[.][^.]+$", "");
+        manifest.addCanvas(imageId, imageInfo.getIdentifier(), imageId,
+                imageInfo.getImage().getWidth(), imageInfo.getImage().getHeight());
+
+        JsonNode manifestJson = manifest.toJson();
+        Path manifestPath = outputDir.resolve("manifest.json");
+        JsonMapper mapper = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
+        log.info("Writing manifest.json to {}", manifestPath);
+        mapper.writeValue(manifestPath.toFile(), manifestJson);
+        return manifestPath;
     }
 
     public void createImages(
@@ -336,7 +368,7 @@ public class Tiler {
         return json;
     }
 
-    private void generateTiles(ImageInfo imageInfo, Path outputDir, ImageInfo.IIIFVersion version, TileSink sink) throws Exception {
+    protected void generateTiles(ImageInfo imageInfo, Path outputDir, ImageInfo.IIIFVersion version, TileSink sink) throws Exception {
         //Path imageBaseDir = sink.getBasePath(outputDir, imageInfo);
         Path imageBaseDir = outputDir;
         System.out.println("Generating tiles in: " + imageBaseDir);
@@ -360,7 +392,7 @@ public class Tiler {
         }
     }
 
-    private void generateSizes(ImageInfo imageInfo, Path imageDir, ImageInfo.IIIFVersion version, TileSink sink, ExecutorService executor, List<Future<?>> futures) {
+    protected void generateSizes(ImageInfo imageInfo, Path imageDir, ImageInfo.IIIFVersion version, TileSink sink, ExecutorService executor, List<Future<?>> futures) {
         for (ImageInfo.Size size : imageInfo.getSizes()) {
             futures.add(executor.submit(() -> {
                 try {
@@ -393,7 +425,7 @@ public class Tiler {
         }
     }
 
-    private void generateScaleTiles(ImageInfo imageInfo, Path imageDir, ImageInfo.IIIFVersion version, TileSink sink, ExecutorService executor, List<Future<?>> futures) {
+    protected void generateScaleTiles(ImageInfo imageInfo, Path imageDir, ImageInfo.IIIFVersion version, TileSink sink, ExecutorService executor, List<Future<?>> futures) {
         for (int scale : imageInfo.getScaleFactors()) {
             double scaleLevelWidth = (double) imageInfo.getImage().getWidth() / scale;
             double scaleLevelHeight = (double) imageInfo.getImage().getHeight() / scale;
@@ -451,7 +483,7 @@ public class Tiler {
      * @param scale    Scale factor (1 = full resolution).
      * @return A new map with all enricher contributions applied.
      */
-    private static Map<String, Object> enrichMetadata(ImageInfo imageInfo, int x, int y, int w, int h, int scale) {
+    protected static Map<String, Object> enrichMetadata(ImageInfo imageInfo, int x, int y, int w, int h, int scale) {
         Map<String, Object> sourceMetadata = imageInfo.getImage().getMetadata();
         Map<String, Object> result = (sourceMetadata == null)
                 ? new java.util.HashMap<>()
