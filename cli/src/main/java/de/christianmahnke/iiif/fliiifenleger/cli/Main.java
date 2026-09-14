@@ -6,6 +6,7 @@ import ch.qos.logback.classic.Level;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.IiifManifest;
 import de.christianmahnke.iiif.fliiifenleger.ManifestMerger;
+import de.christianmahnke.iiif.fliiifenleger.ManifestUpdater;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.TilerException;
 import de.christianmahnke.iiif.fliiifenleger.debug.IiifImageReassembler;
@@ -327,7 +328,7 @@ public class Main implements Runnable {
     }
 
     @Command(name = "manifest",
-            description = "Merges IIIF Presentation API manifests and changes base URIs.",
+            description = "Merges IIIF Presentation API manifests, changes base URIs, and adds TEI seeAlso.",
             mixinStandardHelpOptions = true)
     static class ManifestCommand implements Callable<Integer> {
 
@@ -339,6 +340,12 @@ public class Main implements Runnable {
 
         @Option(names = {"-o", "--output"}, description = "Path to save the merged manifest.json.")
         private Path output;
+
+        @Option(names = {"-t", "--tei-folder"}, description = "Path to folder containing TEI XML files to add as seeAlso.")
+        private Path teiFolder;
+
+        @Option(names = {"--tei-base-url"}, description = "Base URL for TEI files (default: manifest base URI).")
+        private String teiBaseUrl;
 
         @Parameters(index = "0..*", description = "Input manifest.json files or URLs.")
         private List<String> inputs;
@@ -362,11 +369,32 @@ public class Main implements Runnable {
             if (output == null || output.toString().isEmpty()) {
                 outputPath = Path.of("manifest.json");
             }
-            ManifestMerger merger = new ManifestMerger(version, baseUri);
-            ManifestMerger.mergeAndSave(inputs, version, baseUri, outputPath);
-            log.info("Merged manifest written to {} ({} manifests, {} canvases)",
-                    outputPath, merger.getManifestCount(), merger.getCanvases().size());
+
+            if (teiFolder != null) {
+                if (inputs.size() != 1) {
+                    log.error("Error: When using --tei-folder, exactly one input manifest is required.");
+                    return 1;
+                }
+                String manifestJson = readInput(inputs.get(0));
+                String result = ManifestUpdater.updateWithTeiFiles(manifestJson, teiFolder, teiBaseUrl);
+                java.nio.file.Files.writeString(outputPath, result);
+                log.info("Updated manifest with TEI seeAlso written to {}", outputPath);
+            } else {
+                ManifestMerger.mergeAndSave(inputs, version, baseUri, outputPath);
+                ManifestMerger merger = new ManifestMerger(version, baseUri);
+                log.info("Merged manifest written to {}", outputPath);
+            }
             return 0;
+        }
+
+        private String readInput(String input) throws Exception {
+            try {
+                return new String(java.nio.file.Files.readAllBytes(Path.of(input)));
+            } catch (Exception e) {
+                try (java.io.InputStream is = new java.net.URI(input).toURL().openStream()) {
+                    return new String(is.readAllBytes());
+                }
+            }
         }
     }
 

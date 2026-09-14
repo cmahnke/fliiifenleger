@@ -114,6 +114,19 @@ public class IiifManifest {
         imagesArray.add(annotation);
         canvasNode.set("images", imagesArray);
 
+        if (canvas.seeAlso != null && !canvas.seeAlso.isEmpty()) {
+            ArrayNode seeAlsoArray = MAPPER.createArrayNode();
+            for (SeeAlsoRef ref : canvas.seeAlso) {
+                ObjectNode seeAlsoNode = MAPPER.createObjectNode();
+                seeAlsoNode.put("id", ref.id);
+                seeAlsoNode.put("type", ref.type);
+                seeAlsoNode.put("format", ref.format);
+                seeAlsoNode.put("profile", ref.profile);
+                seeAlsoArray.add(seeAlsoNode);
+            }
+            canvasNode.set("seeAlso", seeAlsoArray);
+        }
+
         return canvasNode;
     }
 
@@ -164,6 +177,19 @@ public class IiifManifest {
         // Reset to cleaner structure
         canvasNode.remove("body");
         canvasNode.remove("target");
+
+        if (canvas.seeAlso != null && !canvas.seeAlso.isEmpty()) {
+            ArrayNode seeAlsoArray = MAPPER.createArrayNode();
+            for (SeeAlsoRef ref : canvas.seeAlso) {
+                ObjectNode seeAlsoNode = MAPPER.createObjectNode();
+                seeAlsoNode.put("id", ref.id);
+                seeAlsoNode.put("type", ref.type);
+                seeAlsoNode.put("format", ref.format);
+                seeAlsoNode.put("profile", ref.profile);
+                seeAlsoArray.add(seeAlsoNode);
+            }
+            canvasNode.set("seeAlso", seeAlsoArray);
+        }
 
         return canvasNode;
     }
@@ -216,9 +242,10 @@ public class IiifManifest {
                                 imageInfoId = images.get("resource").get("@id").asText();
                             }
                         }
+                        List<SeeAlsoRef> seeAlsoRefs = extractSeeAlso(canvasNode);
                         if (canvasId != null) {
                             String id = canvasId.substring(canvasId.lastIndexOf('/') + 1);
-                            refs.add(new CanvasRef(id, canvasLabel, imageInfoId, width, height));
+                            refs.add(new CanvasRef(id, canvasLabel, imageInfoId, width, height, null, seeAlsoRefs));
                         }
                     }
                 }
@@ -236,14 +263,32 @@ public class IiifManifest {
                             && canvasNode.get("items").size() > 0) {
                         imageInfoId = canvasNode.get("items").get(0).get("id").asText();
                     }
+                    List<SeeAlsoRef> seeAlsoRefs = extractSeeAlso(canvasNode);
                     if (canvasId != null) {
                         String id = canvasId.substring(canvasId.lastIndexOf('/') + 1);
-                        refs.add(new CanvasRef(id, canvasLabel, imageInfoId, width, height));
+                        refs.add(new CanvasRef(id, canvasLabel, imageInfoId, width, height, null, seeAlsoRefs));
                     }
                 }
             }
         }
         return refs;
+    }
+
+    protected static List<SeeAlsoRef> extractSeeAlso(JsonNode canvasNode) {
+        List<SeeAlsoRef> seeAlsoRefs = new ArrayList<>();
+        JsonNode seeAlsoNode = canvasNode.get("seeAlso");
+        if (seeAlsoNode != null && seeAlsoNode.isArray()) {
+            for (JsonNode ref : seeAlsoNode) {
+                String refId = ref.has("id") ? ref.get("id").asText() : null;
+                String refType = ref.has("type") ? ref.get("type").asText() : null;
+                String refFormat = ref.has("format") ? ref.get("format").asText() : null;
+                String refProfile = ref.has("profile") ? ref.get("profile").asText() : null;
+                if (refId != null) {
+                    seeAlsoRefs.add(new SeeAlsoRef(refId, refType, refFormat, refProfile));
+                }
+            }
+        }
+        return seeAlsoRefs;
     }
 
     /**
@@ -291,17 +336,40 @@ public class IiifManifest {
         public final int width;
         public final int height;
         public final Map<String, Object> metadata;
+        public final List<SeeAlsoRef> seeAlso;
 
         public CanvasRef(String id, String label, String imageInfoId, int width, int height) {
-            this(id, label, imageInfoId, width, height, null);
+            this(id, label, imageInfoId, width, height, null, new ArrayList<>());
         }
         public CanvasRef(String id, String label, String imageInfoId, int width, int height, Map<String, Object> metadata) {
+            this(id, label, imageInfoId, width, height, metadata, new ArrayList<>());
+        }
+        public CanvasRef(String id, String label, String imageInfoId, int width, int height, Map<String, Object> metadata, List<SeeAlsoRef> seeAlso) {
             this.id = id;
             this.label = label;
             this.imageInfoId = imageInfoId;
             this.width = width;
             this.height = height;
             this.metadata = metadata;
+            this.seeAlso = seeAlso != null ? seeAlso : new ArrayList<>();
+        }
+
+        public void addSeeAlso(SeeAlsoRef ref) {
+            this.seeAlso.add(ref);
+        }
+    }
+
+    public static class SeeAlsoRef {
+        public final String id;
+        public final String type;
+        public final String format;
+        public final String profile;
+
+        public SeeAlsoRef(String id, String type, String format, String profile) {
+            this.id = id;
+            this.type = type;
+            this.format = format;
+            this.profile = profile;
         }
     }
 }
