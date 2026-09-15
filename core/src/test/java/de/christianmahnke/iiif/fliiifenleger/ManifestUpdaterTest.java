@@ -226,4 +226,128 @@ class ManifestUpdaterTest {
         assertEquals("http://existing.org/doc.xml", seeAlso.get(0).get("id").asText());
         assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso.get(1).get("id").asText());
     }
+
+    @Test
+    void testMusicXmlGlobAndMediaType() throws Exception {
+        Files.writeString(tempDir.resolve("page1.musicxml"), "<score/>");
+        Files.writeString(tempDir.resolve("page2.musicxml"), "<score/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.musicxml", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode canvases = json.get("sequences").get(0).get("canvases");
+        JsonNode seeAlso1 = canvases.get(0).get("seeAlso");
+        assertNotNull(seeAlso1);
+        assertEquals(1, seeAlso1.size());
+        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso1.get(0).get("id").asText());
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso1.get(0).get("format").asText());
+        assertEquals("Dataset", seeAlso1.get(0).get("type").asText());
+        assertNull(seeAlso1.get(0).get("profile"));
+
+        JsonNode seeAlso2 = canvases.get(1).get("seeAlso");
+        assertNotNull(seeAlso2);
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso2.get(0).get("format").asText());
+    }
+
+    @Test
+    void testCompressedMusicXmlMediaType() throws Exception {
+        Files.writeString(tempDir.resolve("page1.mxl"), "fake-zip");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.mxl", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
+        assertNotNull(seeAlso);
+        assertEquals("application/vnd.recordare.musicxml", seeAlso.get(0).get("format").asText());
+        assertNull(seeAlso.get(0).get("profile"));
+    }
+
+    @Test
+    void testCompoundTeiXmlPattern() throws Exception {
+        Files.writeString(tempDir.resolve("page1.tei.xml"), "<TEI/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.tei.xml", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode canvases = json.get("sequences").get(0).get("canvases");
+        JsonNode seeAlso1 = canvases.get(0).get("seeAlso");
+        assertNotNull(seeAlso1);
+        assertEquals(1, seeAlso1.size());
+        assertEquals("http://example.org/iiif/manifest/page1.tei.xml", seeAlso1.get(0).get("id").asText());
+        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asText());
+        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asText());
+
+        // page2 has no file, so no seeAlso
+        JsonNode seeAlso2 = canvases.get(1).get("seeAlso");
+        assertTrue(seeAlso2 == null || seeAlso2.isEmpty());
+    }
+
+    @Test
+    void testGlobFiltersNonMatchingFiles() throws Exception {
+        Files.writeString(tempDir.resolve("page1.xml"), "<TEI/>");
+        Files.writeString(tempDir.resolve("page1.musicxml"), "<score/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.musicxml", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
+        assertNotNull(seeAlso);
+        assertEquals(1, seeAlso.size());
+        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso.get(0).get("id").asText());
+    }
+
+    @Test
+    void testCaseInsensitiveGlob() throws Exception {
+        Files.writeString(tempDir.resolve("Page1.MUSICXML"), "<score/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.musicxml", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
+        assertNotNull(seeAlso);
+        assertEquals(1, seeAlso.size());
+        assertEquals("http://example.org/iiif/manifest/Page1.MUSICXML", seeAlso.get(0).get("id").asText());
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso.get(0).get("format").asText());
+    }
+
+    @Test
+    void testBraceExpansionMixedFolder() throws Exception {
+        Files.writeString(tempDir.resolve("page1.musicxml"), "<score/>");
+        Files.writeString(tempDir.resolve("page2.mxl"), "fake-zip");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.{musicxml,mxl}", null, null, null, null);
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode canvases = json.get("sequences").get(0).get("canvases");
+        assertEquals("application/vnd.recordare.musicxml+xml", canvases.get(0).get("seeAlso").get(0).get("format").asText());
+        assertEquals("application/vnd.recordare.musicxml", canvases.get(1).get("seeAlso").get(0).get("format").asText());
+    }
+
+    @Test
+    void testFormatOverride() throws Exception {
+        Files.writeString(tempDir.resolve("page1.musicxml"), "<score/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, "*.musicxml", null,
+                "application/custom+xml", "Text", "http://example.org/profile");
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
+        assertNotNull(seeAlso);
+        assertEquals("application/custom+xml", seeAlso.get(0).get("format").asText());
+        assertEquals("Text", seeAlso.get(0).get("type").asText());
+        assertEquals("http://example.org/profile", seeAlso.get(0).get("profile").asText());
+    }
+
+    @Test
+    void testEmptyProfileOverrideOmitsProfile() throws Exception {
+        Files.writeString(tempDir.resolve("page1.xml"), "<TEI/>");
+
+        String result = ManifestUpdater.updateWithSeeAlsoFiles(V2_MANIFEST, tempDir, null, null, null, null, "");
+        JsonNode json = MAPPER.readTree(result);
+
+        JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
+        assertNotNull(seeAlso);
+        assertEquals("application/tei+xml", seeAlso.get(0).get("format").asText());
+        assertNull(seeAlso.get(0).get("profile"));
+    }
 }

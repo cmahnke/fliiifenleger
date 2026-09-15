@@ -119,9 +119,15 @@ public class IiifManifest {
             for (SeeAlsoRef ref : canvas.seeAlso) {
                 ObjectNode seeAlsoNode = MAPPER.createObjectNode();
                 seeAlsoNode.put("id", ref.id);
-                seeAlsoNode.put("type", ref.type);
-                seeAlsoNode.put("format", ref.format);
-                seeAlsoNode.put("profile", ref.profile);
+                if (ref.type != null) {
+                    seeAlsoNode.put("type", ref.type);
+                }
+                if (ref.format != null) {
+                    seeAlsoNode.put("format", ref.format);
+                }
+                if (ref.profile != null) {
+                    seeAlsoNode.put("profile", ref.profile);
+                }
                 seeAlsoArray.add(seeAlsoNode);
             }
             canvasNode.set("seeAlso", seeAlsoArray);
@@ -183,9 +189,15 @@ public class IiifManifest {
             for (SeeAlsoRef ref : canvas.seeAlso) {
                 ObjectNode seeAlsoNode = MAPPER.createObjectNode();
                 seeAlsoNode.put("id", ref.id);
-                seeAlsoNode.put("type", ref.type);
-                seeAlsoNode.put("format", ref.format);
-                seeAlsoNode.put("profile", ref.profile);
+                if (ref.type != null) {
+                    seeAlsoNode.put("type", ref.type);
+                }
+                if (ref.format != null) {
+                    seeAlsoNode.put("format", ref.format);
+                }
+                if (ref.profile != null) {
+                    seeAlsoNode.put("profile", ref.profile);
+                }
                 seeAlsoArray.add(seeAlsoNode);
             }
             canvasNode.set("seeAlso", seeAlsoArray);

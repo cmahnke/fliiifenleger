@@ -328,7 +328,7 @@ public class Main implements Runnable {
     }
 
     @Command(name = "manifest",
-            description = "Merges IIIF Presentation API manifests, changes base URIs, and adds TEI seeAlso.",
+            description = "Merges IIIF Presentation API manifests, changes base URIs, and adds seeAlso entries (e.g. TEI, MusicXML).",
             mixinStandardHelpOptions = true)
     static class ManifestCommand implements Callable<Integer> {
 
@@ -341,11 +341,29 @@ public class Main implements Runnable {
         @Option(names = {"-o", "--output"}, description = "Path to save the merged manifest.json.")
         private Path output;
 
-        @Option(names = {"-t", "--tei-folder"}, description = "Path to folder containing TEI XML files to add as seeAlso.")
+        @Option(names = {"-t", "--tei-folder"}, description = "Path to folder containing TEI XML files to add as seeAlso (deprecated, use --seealso-folder).")
         private Path teiFolder;
 
-        @Option(names = {"--tei-base-url"}, description = "Base URL for TEI files (default: manifest base URI).")
+        @Option(names = {"--tei-base-url"}, description = "Base URL for TEI files (default: manifest base URI, deprecated, use --seealso-base-url).")
         private String teiBaseUrl;
+
+        @Option(names = {"--seealso-folder"}, description = "Path to folder containing files to add as canvas seeAlso entries.")
+        private Path seeAlsoFolder;
+
+        @Option(names = {"--seealso-base-url"}, description = "Base URL for seeAlso files (default: manifest base URI).")
+        private String seeAlsoBaseUrl;
+
+        @Option(names = {"--seealso-pattern"}, description = "Glob pattern for seeAlso file names, e.g. '*.tei.xml' or '*.musicxml' (default: legacy *.xml and *.tei, case-insensitive).")
+        private String seeAlsoPattern;
+
+        @Option(names = {"--seealso-format", "--seealso-media-type", "--media-type"}, description = "Media type for seeAlso entries (default: auto-detected per file, e.g. application/tei+xml, application/vnd.recordare.musicxml+xml).")
+        private String seeAlsoFormat;
+
+        @Option(names = {"--seealso-type"}, description = "Type for seeAlso entries (default: Dataset).", defaultValue = "Dataset")
+        private String seeAlsoType;
+
+        @Option(names = {"--seealso-profile"}, description = "Profile for seeAlso entries (default: per-format default, empty string omits it).")
+        private String seeAlsoProfile;
 
         @Parameters(index = "0..*", description = "Input manifest.json files or URLs.")
         private List<String> inputs;
@@ -370,15 +388,18 @@ public class Main implements Runnable {
                 outputPath = Path.of("manifest.json");
             }
 
-            if (teiFolder != null) {
+            if (seeAlsoFolder != null || teiFolder != null) {
                 if (inputs.size() != 1) {
-                    log.error("Error: When using --tei-folder, exactly one input manifest is required.");
+                    log.error("Error: When using --seealso-folder/--tei-folder, exactly one input manifest is required.");
                     return 1;
                 }
+                Path folder = seeAlsoFolder != null ? seeAlsoFolder : teiFolder;
+                String fileBaseUrl = seeAlsoBaseUrl != null ? seeAlsoBaseUrl : teiBaseUrl;
                 String manifestJson = readInput(inputs.get(0));
-                String result = ManifestUpdater.updateWithTeiFiles(manifestJson, teiFolder, teiBaseUrl);
+                String result = ManifestUpdater.updateWithSeeAlsoFiles(manifestJson, folder, seeAlsoPattern,
+                        fileBaseUrl, seeAlsoFormat, seeAlsoType, seeAlsoProfile);
                 java.nio.file.Files.writeString(outputPath, result);
-                log.info("Updated manifest with TEI seeAlso written to {}", outputPath);
+                log.info("Updated manifest with seeAlso written to {}", outputPath);
             } else {
                 ManifestMerger.mergeAndSave(inputs, version, baseUri, outputPath);
                 ManifestMerger merger = new ManifestMerger(version, baseUri);
