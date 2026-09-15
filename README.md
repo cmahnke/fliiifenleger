@@ -611,14 +611,6 @@ setup.  A direct (non-Homebrew) install is the attached
 `fliiifenleger.tar.gz`: extract it anywhere and run `bin/fliiifenleger`
 (requires Java 21+ on the `PATH`).
 
-One-time maintainer setup (not in this repo):
-
-1.  Create the tap repo `cmahnke/homebrew-fliiifenleger` with a `Formula/`
-    directory (plus `LICENSE` and `README`).
-2.  Create a classic personal access token with `repo` scope covering both
-    this repo and the tap, and save it as the `HOMEBREW_TAP_TOKEN` secret
-    (the default `GITHUB_TOKEN` cannot push across repos).
-
 Each `v*` release then updates `Formula/fliiifenleger.rb` in the tap
 automatically (checksum + URL); no per-release manual steps.
 
