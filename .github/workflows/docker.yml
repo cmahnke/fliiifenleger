@@ -57,7 +57,7 @@ jobs:
             -DgenerateBackupPoms=false
       - name: Extract Docker metadata (tags and labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/cmahnke/fliiifenleger/cli
           # latest=false: take full control — latest/snapshot below, no
