@@ -2,7 +2,9 @@ name: Maven release deploy
 
 # Release workflow: triggered by version tags (v*).  It runs the full test
 # suite, sets the Maven version from the tag, deploys the release artifacts
-# to GitHub Packages, and attaches the standalone JARs to the GitHub release.
+# to GitHub Packages, attaches the standalone JARs plus the Homebrew
+# custom tarball to the GitHub release, and publishes the Homebrew formula
+# to the cmahnke/homebrew-fliiifenleger tap via homebrew-releaser.
 
 on:
   push:
@@ -131,3 +133,64 @@ jobs:
             --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and attach Homebrew tarball
+        # Custom tarball consumed by the homebrew job below via
+        # homebrew-releaser's `custom_tarball` option: it must exist at
+        # releases/download/<tag>/fliiifenleger.tar.gz before the formula
+        # is generated (the action computes its checksum).  The bin/lib
+        # layout matches packaging/homebrew/; the formula installs the JAR
+        # into libexec and writes its own openjdk@21-pinned wrapper.
+        run: |
+          rm -rf homebrew-stage
+          mkdir -p homebrew-stage/bin homebrew-stage/lib
+          cp packaging/homebrew/fliiifenleger homebrew-stage/bin/
+          cp cli/target/fliiifenleger-cli.jar homebrew-stage/lib/
+          tar -czf fliiifenleger.tar.gz -C homebrew-stage bin lib
+          gh release upload "${{ steps.version.outputs.tag }}" \
+            fliiifenleger.tar.gz \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publishes the just-released version to the Homebrew tap.  Runs after
+  # the release job so fliiifenleger.tar.gz is already attached.
+  #
+  # One-time setup (not in this repo):
+  #   1. Create the tap repo cmahnke/homebrew-fliiifenleger with a Formula/
+  #      directory (plus LICENSE and README).
+  #   2. Create a classic PAT with `repo` scope covering both this repo and
+  #      the tap, and save it as the HOMEBREW_TAP_TOKEN secret (the default
+  #      GITHUB_TOKEN cannot push across repos).
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release project to Homebrew tap
+        uses: Justintime50/homebrew-releaser@v4
+        with:
+          homebrew_owner: cmahnke
+          homebrew_tap: homebrew-fliiifenleger
+          formula_folder: Formula
+          github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          commit_owner: homebrew-releaser
+          commit_email: homebrew-releaser@example.com
+          # The tarball ships lib/fliiifenleger-cli.jar; install it into
+          # libexec and write a wrapper pinned to openjdk@21 that keeps the
+          # --enable-native-access flag (needed by the JXL imageio plugin).
+          install: |
+            libexec.install "lib/fliiifenleger-cli.jar"
+            (bin/"fliiifenleger").write <<~EOS
+              #!/bin/bash
+              exec "#{Formula["openjdk@21"].opt_bin}/java" "--enable-native-access=ALL-UNNAMED" "-jar" "#{libexec}/fliiifenleger-cli.jar" "$@"
+            EOS
+          test: assert_match("fliiifenleger", shell_output("#{bin}/fliiifenleger --version"))
+          # openjdk@21 matches the bytecode target (release 21); jpeg-xl
+          # enables the `jxl` image source without extra user setup.
+          depends_on: |
+            "openjdk@21"
+            "jpeg-xl"
+          custom_tarball: fliiifenleger
+          update_readme_table: false
+          skip_commit: false
+          debug: false

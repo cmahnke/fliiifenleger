@@ -559,7 +559,12 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
   tested.
 * `release.yml` — on a `v*` tag (e.g. `v0.1.0`) it runs the test suite, sets
   the Maven version from the tag, deploys the release artifacts to GitHub
-  Packages, and attaches the standalone JARs to the GitHub release.
+  Packages, attaches the standalone JARs plus the Homebrew tarball
+  (`fliiifenleger.tar.gz`, layout `bin/fliiifenleger` +
+  `lib/fliiifenleger-cli.jar`, see `packaging/homebrew/`) to the GitHub
+  release, and publishes the Homebrew formula to the
+  `cmahnke/homebrew-fliiifenleger` tap via
+  [`homebrew-releaser`](https://github.com/marketplace/actions/homebrew-releaser).
 * `maven-site.yml` — publishes the generated Maven site (this documentation)
   to GitHub Pages on every push to `main`.
 * `docker.yml` — builds `Dockerfile` and publishes
@@ -587,6 +592,35 @@ Re-running a release for the same version works out of the box: GitHub
 Packages treats release versions as immutable (re-deploying returns
 `409 Conflict`), so `release.yml` deletes previously published package
 versions of the release before deploying.
+
+### Homebrew
+
+End-user install once a release is published:
+
+```sh
+brew tap cmahnke/fliiifenleger
+brew install fliiifenleger
+fliiifenleger --version
+```
+
+The formula installs the shaded CLI JAR into `libexec` with a wrapper
+pinned to `openjdk@21` (matching the `release 21` bytecode target) that
+keeps `--enable-native-access=ALL-UNNAMED` for the JXL imageio plugin,
+and depends on `jpeg-xl` so the `jxl` image source works without extra
+setup.  A direct (non-Homebrew) install is the attached
+`fliiifenleger.tar.gz`: extract it anywhere and run `bin/fliiifenleger`
+(requires Java 21+ on the `PATH`).
+
+One-time maintainer setup (not in this repo):
+
+1.  Create the tap repo `cmahnke/homebrew-fliiifenleger` with a `Formula/`
+    directory (plus `LICENSE` and `README`).
+2.  Create a classic personal access token with `repo` scope covering both
+    this repo and the tap, and save it as the `HOMEBREW_TAP_TOKEN` secret
+    (the default `GITHUB_TOKEN` cannot push across repos).
+
+Each `v*` release then updates `Formula/fliiifenleger.rb` in the tap
+automatically (checksum + URL); no per-release manual steps.
 
 ## License
 

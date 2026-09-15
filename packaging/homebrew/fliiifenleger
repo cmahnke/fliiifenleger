@@ -1,0 +1,16 @@
+#!/bin/sh
+# fliiifenleger launcher for direct tarball installs and as the layout
+# reference for the Homebrew formula (the formula installs the JAR into
+# libexec and generates an equivalent wrapper pointing at openjdk@21).
+#
+# Layout expected by this script:
+#   <APP_HOME>/bin/fliiifenleger          (this file)
+#   <APP_HOME>/lib/fliiifenleger-cli.jar
+#
+# Requires Java 21+ on the PATH. The --enable-native-access flag silences
+# the JDK 24+ restricted-method warning from the JXL imageio plugin's
+# FFM (Panama) usage and is required for the `jxl` image source.
+set -eu
+
+APP_HOME="$(cd "$(dirname "$0")/.." && pwd)"
+exec java --enable-native-access=ALL-UNNAMED -jar "$APP_HOME/lib/fliiifenleger-cli.jar" "$@"
