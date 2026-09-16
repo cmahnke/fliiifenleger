@@ -4,6 +4,8 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator;
+import de.christianmahnke.iiif.fliiifenleger.validation.ValidationResult;
+import de.christianmahnke.iiif.fliiifenleger.validation.Validator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +37,7 @@ class HdrServiceValidationTest {
     @Test
     @DisplayName("V3 HDR service passes")
     void hdrServicePasses() {
-        InfoJsonValidator.ValidationResult result =
+        ValidationResult result =
                 InfoJsonValidator.validate(serviceDoc(contexts()), ImageInfo.IIIFVersion.V3);
         assertThat(result.valid()).as(() -> "expected valid, got: " + result.errors()).isTrue();
     }
@@ -44,7 +46,14 @@ class HdrServiceValidationTest {
     @DisplayName("V3 HDR service without its context fails")
     void hdrServiceWithoutContextFails() {
         String json = serviceDoc("\"http://iiif.io/api/image/3/context.json\"");
-        InfoJsonValidator.ValidationResult result = InfoJsonValidator.validate(json);
+        ValidationResult result = InfoJsonValidator.validate(json);
         assertThat(result.valid()).isFalse();
+    }
+
+    @Test
+    @DisplayName("hdr validator is discovered via ServiceLoader")
+    void hdrValidatorDiscovered() {
+        assertThat(Validator.loadAll().stream().map(Validator::getName)).contains("hdr");
+        assertThat(InfoJsonValidator.VALIDATOR_REGISTRY).containsKey("hdr");
     }
 }

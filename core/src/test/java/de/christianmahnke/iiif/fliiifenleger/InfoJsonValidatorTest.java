@@ -2,10 +2,14 @@
 // Copyright (c) 2026 Christian Mahnke
 package de.christianmahnke.iiif.fliiifenleger;
 
+import de.christianmahnke.iiif.fliiifenleger.validation.ValidationResult;
+import de.christianmahnke.iiif.fliiifenleger.validation.Validator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.List;
 
 @DisplayName("InfoJsonValidator")
 class InfoJsonValidatorTest {
@@ -91,13 +95,34 @@ class InfoJsonValidatorTest {
     }
 
     @Test
-    @DisplayName("V3 service trustAnchor that is not a URI fails")
-    void v3TrustAnchorMustBeUri() {
+    @DisplayName("V3 service trustAnchor of an unknown extension is lenient on a core-only classpath")
+    void v3UnknownExtensionTrustAnchorIsLenient() {
         String json = VALID_V3.replace("\"tiles\"",
                 "\"service\": [{\"id\": \"https://example.org/s\", \"type\": \"Service\", "
                 + "\"profile\": \"https://example.org/ext/\", \"trustAnchor\": \"not-a-uri\"}], \"tiles\"");
         var result = InfoJsonValidator.validate(json);
-        assertFalse(result.valid());
+        assertTrue(result.valid(), () -> "expected lenient pass, got: " + result.errors());
+    }
+
+    @Test
+    @DisplayName("core validators are discovered via ServiceLoader")
+    void coreValidatorsDiscovered() {
+        var names = Validator.loadAll().stream().map(Validator::getName).toList();
+        assertTrue(names.contains("core-context"), "expected core-context validator, got: " + names);
+        assertTrue(names.contains("core-v2"), "expected core-v2 validator, got: " + names);
+        assertTrue(InfoJsonValidator.VALIDATOR_REGISTRY.containsKey("core-context"));
+        assertTrue(InfoJsonValidator.VALIDATOR_REGISTRY.containsKey("core-v2"));
+    }
+
+    @Test
+    @DisplayName("ValidationResult merge combines errors and validity")
+    void validationResultMerge() {
+        var ok = ValidationResult.ok(ImageInfo.IIIFVersion.V3);
+        var failures = ValidationResult.failures(List.of("a", "b"));
+        var merged = ok.merge(failures);
+        assertFalse(merged.valid());
+        assertEquals(List.of("a", "b"), merged.errors());
+        assertEquals(ImageInfo.IIIFVersion.V3, merged.detectedVersion());
     }
 
     @Test

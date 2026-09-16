@@ -490,8 +490,10 @@ public class Main implements Runnable {
             subcommands = {
                     InfoCommand.ListSourcesCommand.class,
                     InfoCommand.ListSinksCommand.class,
+                    InfoCommand.ListValidatorsCommand.class,
                     InfoCommand.DescribeSourceCommand.class,
-                    InfoCommand.DescribeSinkCommand.class
+                    InfoCommand.DescribeSinkCommand.class,
+                    InfoCommand.DescribeValidatorCommand.class
             })
     static class InfoCommand implements Runnable {
         @Override
@@ -649,6 +651,77 @@ public class Main implements Runnable {
                 }
                 System.out.println("Options (via --sink-opt key=value):");
                 printOptions(sink.getAvailableOptions());
+                return 0;
+            }
+        }
+
+        @Command(name = "list-validators", description = "List all available info.json validators.")
+        static class ListValidatorsCommand implements Callable<Integer> {
+            @Option(names = {"-v", "--verbose"}, description = "Show descriptions and available options per validator.")
+            private boolean verbose;
+
+            @Override
+            public Integer call() {
+                Map<String, de.christianmahnke.iiif.fliiifenleger.validation.Validator> registry =
+                        de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.VALIDATOR_REGISTRY;
+                if (registry.isEmpty()) {
+                    System.out.println("No info.json validators found. Make sure they are on the classpath and registered via @AutoService.");
+                } else {
+                    System.out.println("Available info.json validators:");
+                    registry.entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .forEach(entry -> {
+                                de.christianmahnke.iiif.fliiifenleger.validation.Validator validator = entry.getValue();
+                                String description = "";
+                                try {
+                                    description = validator.getDescription();
+                                } catch (Exception e) {
+                                    // Ignore introspection failures, still list the name.
+                                }
+                                if (verbose) {
+                                    System.out.println(" - " + entry.getKey()
+                                            + " (" + validator.getClass().getName() + ")"
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                    try {
+                                        printOptions(validator.getAvailableOptions());
+                                    } catch (Exception e) {
+                                        System.out.println("    (option introspection failed: " + e.getMessage() + ")");
+                                    }
+                                } else {
+                                    System.out.println(" - " + entry.getKey()
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                }
+                            });
+                    if (!verbose) {
+                        System.out.println("Use '--verbose' for option details or 'info describe-validator <name>'.");
+                    }
+                }
+                return 0;
+            }
+        }
+
+        @Command(name = "describe-validator", description = "Show available options for one info.json validator.")
+        static class DescribeValidatorCommand implements Callable<Integer> {
+            @Parameters(index = "0", description = "Name of the info.json validator (see 'info list-validators').")
+            private String name;
+
+            @Override
+            public Integer call() {
+                de.christianmahnke.iiif.fliiifenleger.validation.Validator validator =
+                        de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.VALIDATOR_REGISTRY.get(name);
+                if (validator == null) {
+                    System.out.println("Unknown info.json validator: '" + name + "'. Available: "
+                            + String.join(", ", new java.util.TreeSet<>(
+                                    de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator.VALIDATOR_REGISTRY.keySet())));
+                    return 1;
+                }
+                System.out.println("Validator '" + name + "' (" + validator.getClass().getName() + ")");
+                String description = validator.getDescription();
+                if (!description.isEmpty()) {
+                    System.out.println(description);
+                }
+                System.out.println("Options:");
+                printOptions(validator.getAvailableOptions());
                 return 0;
             }
         }

@@ -118,8 +118,8 @@ public class ManifestMerger {
                 arr.add(replaceBaseUriValue(node.get(i), oldBase, newBase));
             }
             return arr;
-        } else if (node.isTextual()) {
-            String text = node.asText();
+        } else if (node.isString()) {
+            String text = node.asString();
             if (text.startsWith(oldBase) && !oldBase.equals(newBase)) {
                 return MAPPER.getNodeFactory().stringNode(text.replace(oldBase, newBase));
             }
@@ -175,8 +175,8 @@ public class ManifestMerger {
 
         ManifestData(JsonNode node) throws Exception {
             this.node = node;
-            this.id = node.has("@id") ? node.get("@id").asText()
-                    : (node.has("id") ? node.get("id").asText() : null);
+            this.id = node.has("@id") ? node.get("@id").asString()
+                    : (node.has("id") ? node.get("id").asString() : null);
         }
     }
 }

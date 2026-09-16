@@ -54,7 +54,8 @@ The project is a multi-module Maven project (`core`, `wasm-runtime`,
     *   `ImageSource`: An interface for reading different source image formats (e.g., `DefaultImageSource`, `JxlImageSource`).
     *   `TileSink`: An interface for writing image tiles to different destinations (e.g., `DefaultTileSink` for the local filesystem).
     *   `TileEnricher`: A pluggable per-tile metadata hook (e.g., `RegionTileEnricher` records the tile region; the `ultrahdr` module adds the gain-map crop).
-    *   `ServiceExtension`: A pluggable `info.json` service description (profile/context URIs plus a schema fragment) so validation and merging stay extension-agnostic; implemented by the `jc2pa` (C2PA) and `ultrahdr` (HDR) modules.
+    *   `ServiceExtension`: A pluggable `info.json` service description (profile/context URIs plus a schema fragment) so schema composition stays extension-agnostic; implemented by the `jc2pa` (C2PA) and `ultrahdr` (HDR) modules.
+    *   `Validator`: A pluggable `info.json` semantic check (like `ImageSource` / `TileSink`, discovered via `ServiceLoader`); core ships the generic IIIF rules (`core-context`, `core-v2`), the `jc2pa` (`c2pa`) and `ultrahdr` (`hdr`) modules own their service semantics. The `InfoJsonValidator` facade composes JSON Schema validation with every discovered validator.
     *   `Tiler`: The central class that orchestrates the process of reading a source image, calculating tile layouts, and writing the tiles and `info.json` using a `TileSink`.
     *   `IiifImageReassembler`: A debug/validation utility to reconstruct a full image from a remote IIIF endpoint.
     *   `InfoJsonValidator`: Validates generated or remote `info.json` documents against the bundled JSON Schemas (Image API 2 and 3, plus the HDR/C2PA extensions).
@@ -66,7 +67,7 @@ The project is a multi-module Maven project (`core`, `wasm-runtime`,
 
 3.  **Codec Modules (`jc2pa`, `ultrahdr`, `wasm-runtime`)**: The C2PA signer and the UltraHDR gain-map codec are pure-Rust libraries compiled to WebAssembly (`wasm32-wasip1`) and executed through the shared `wasm-runtime` layer (pure-JVM Chicory by default, optional GraalWasm). The compiled `.wasm` files are build artifacts, not part of the repo.
 
-The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource`, `TileSink`, `TileEnricher`, and `ServiceExtension` implementations at runtime.
+The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource`, `TileSink`, `TileEnricher`, `Validator`, and `ServiceExtension` implementations at runtime.
 
 ## Prerequisites
 
@@ -260,10 +261,14 @@ constrain only service entries claiming their profile
 plain URIs in the embedded profile `supports` list and rejects namespaced
 properties such as `trustAnchor`. The matching JSON-LD contexts live next
 to the fragments (`jc2pa` / `ultrahdr` `src/main/resources/context/`).
-Validation is implemented in `InfoJsonValidator` (core) and additionally
-enforces that a V3 `@context` array ends with the IIIF context. On a
-core-only classpath (no extension modules), extension service entries
-validate as generic services.
+Validation is implemented in `InfoJsonValidator` (core), which composes the
+JSON Schema check with every discovered `Validator`: core ships the generic
+IIIF rules (a V3 `@context` array must end with the IIIF context; Image
+API 2 rejects namespaced properties and enforces the profile level), while
+the `jc2pa` module validates C2PA service entries (context presence,
+`trustAnchor` URI) and the `ultrahdr` module validates HDR gain-map service
+entries (completeness, context presence). On a core-only classpath (no
+extension modules), extension service entries validate as generic services.
 
 ## UltraHDR (gain map) tiling
 

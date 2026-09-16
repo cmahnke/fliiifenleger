@@ -4,6 +4,8 @@ package de.christianmahnke.jc2pa;
 
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.InfoJsonValidator;
+import de.christianmahnke.iiif.fliiifenleger.validation.ValidationResult;
+import de.christianmahnke.iiif.fliiifenleger.validation.Validator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,16 +42,32 @@ class C2paServiceValidationTest {
     @DisplayName("V3 C2PA service with trustAnchor passes")
     void c2paServiceWithAnchorPasses() {
         String json = serviceDoc(contexts(), c2paService(", \"trustAnchor\": \"https://example.org/trust/anchor\""));
-        InfoJsonValidator.ValidationResult result =
+        ValidationResult result =
                 InfoJsonValidator.validate(json, ImageInfo.IIIFVersion.V3);
         assertThat(result.valid()).as(() -> "expected valid, got: " + result.errors()).isTrue();
+    }
+
+    @Test
+    @DisplayName("V3 C2PA service with a non-URI trustAnchor fails")
+    void c2paServiceWithBadAnchorFails() {
+        String json = serviceDoc(contexts(), c2paService(", \"trustAnchor\": \"not-a-uri\""));
+        ValidationResult result =
+                InfoJsonValidator.validate(json, ImageInfo.IIIFVersion.V3);
+        assertThat(result.valid()).isFalse();
+    }
+
+    @Test
+    @DisplayName("c2pa validator is discovered via ServiceLoader")
+    void c2paValidatorDiscovered() {
+        assertThat(Validator.loadAll().stream().map(Validator::getName)).contains("c2pa");
+        assertThat(InfoJsonValidator.VALIDATOR_REGISTRY).containsKey("c2pa");
     }
 
     @Test
     @DisplayName("V3 C2PA service without its context fails")
     void c2paServiceWithoutContextFails() {
         String json = serviceDoc("\"http://iiif.io/api/image/3/context.json\"", c2paService(""));
-        InfoJsonValidator.ValidationResult result = InfoJsonValidator.validate(json);
+        ValidationResult result = InfoJsonValidator.validate(json);
         assertThat(result.valid()).isFalse();
     }
 
@@ -58,7 +76,7 @@ class C2paServiceValidationTest {
     void c2paServiceMissingIdFails() {
         String service = "{\"type\": \"Service\", \"profile\": \"" + C2paTileSink.C2PA_PROFILE_URI + "\"}";
         String json = serviceDoc(contexts(), service);
-        InfoJsonValidator.ValidationResult result = InfoJsonValidator.validate(json);
+        ValidationResult result = InfoJsonValidator.validate(json);
         assertThat(result.valid()).isFalse();
     }
 }

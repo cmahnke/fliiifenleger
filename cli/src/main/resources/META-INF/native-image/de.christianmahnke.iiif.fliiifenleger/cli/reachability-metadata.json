@@ -471,6 +471,9 @@
       "type": "de.christianmahnke.iiif.fliiifenleger.ultrahdr.HdrServiceExtension"
     },
     {
+      "type": "de.christianmahnke.iiif.fliiifenleger.ultrahdr.HdrValidator"
+    },
+    {
       "type": "de.christianmahnke.iiif.fliiifenleger.ultrahdr.UltraHdrImageSource",
       "methods": [
         {
@@ -489,7 +492,16 @@
       ]
     },
     {
+      "type": "de.christianmahnke.iiif.fliiifenleger.validation.CoreContextOrderValidator"
+    },
+    {
+      "type": "de.christianmahnke.iiif.fliiifenleger.validation.CoreV2Validator"
+    },
+    {
       "type": "de.christianmahnke.jc2pa.C2paServiceExtension"
+    },
+    {
+      "type": "de.christianmahnke.jc2pa.C2paValidator"
     },
     {
       "type": "de.christianmahnke.jc2pa.C2paTileSink",
@@ -1818,6 +1830,9 @@
     },
     {
       "glob": "META-INF/services/com.oracle.truffle.runtime.jfr.EventFactory$Provider"
+    },
+    {
+      "glob": "META-INF/services/de.christianmahnke.iiif.fliiifenleger.validation.Validator"
     },
     {
       "glob": "META-INF/services/de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension"

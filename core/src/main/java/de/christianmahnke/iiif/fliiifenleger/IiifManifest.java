@@ -210,10 +210,10 @@ public class IiifManifest {
         JsonNode node = MAPPER.readTree(json);
         ImageInfo.IIIFVersion version = detectVersion(node);
         String id = version == ImageInfo.IIIFVersion.V2
-                ? (node.has("@id") ? node.get("@id").asText() : null)
-                : (node.has("id") ? node.get("id").asText() : null);
-        String label = node.has("label") ? node.get("label").asText() : null;
-        String description = node.has("description") ? node.get("description").asText() : null;
+                ? (node.has("@id") ? node.get("@id").asString() : null)
+                : (node.has("id") ? node.get("id").asString() : null);
+        String label = node.has("label") ? node.get("label").asString() : null;
+        String description = node.has("description") ? node.get("description").asString() : null;
 
         IiifManifest manifest = new IiifManifest(version, id, label);
         if (description != null) manifest.setDescription(description);
@@ -227,10 +227,10 @@ public class IiifManifest {
     protected static ImageInfo.IIIFVersion detectVersion(JsonNode node) {
         JsonNode context = node.get("@context");
         if (context != null) {
-            String ctxStr = context.isTextual() ? context.asText() : context.get(0).asText();
+            String ctxStr = context.isString() ? context.asString() : context.get(0).asString();
             if (ctxStr != null && ctxStr.contains("presentation/3")) return ImageInfo.IIIFVersion.V3;
         }
-        if (node.has("type") && "Manifest".equals(node.get("type").asText())) return ImageInfo.IIIFVersion.V3;
+        if (node.has("type") && "Manifest".equals(node.get("type").asString())) return ImageInfo.IIIFVersion.V3;
         return ImageInfo.IIIFVersion.V2;
     }
 
@@ -242,8 +242,8 @@ public class IiifManifest {
                 JsonNode canvases = sequences.get(0).get("canvases");
                 if (canvases != null && canvases.isArray()) {
                     for (JsonNode canvasNode : canvases) {
-                        String canvasId = canvasNode.has("@id") ? canvasNode.get("@id").asText() : null;
-                        String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asText() : null;
+                        String canvasId = canvasNode.has("@id") ? canvasNode.get("@id").asString() : null;
+                        String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asString() : null;
                         int width = canvasNode.has("width") ? canvasNode.get("width").asInt() : 0;
                         int height = canvasNode.has("height") ? canvasNode.get("height").asInt() : 0;
                         String imageInfoId = null;
@@ -251,7 +251,7 @@ public class IiifManifest {
                                 && canvasNode.get("images").size() > 0) {
                             JsonNode images = canvasNode.get("images").get(0);
                             if (images != null && images.has("resource")) {
-                                imageInfoId = images.get("resource").get("@id").asText();
+                                imageInfoId = images.get("resource").get("@id").asString();
                             }
                         }
                         List<SeeAlsoRef> seeAlsoRefs = extractSeeAlso(canvasNode);
@@ -266,14 +266,14 @@ public class IiifManifest {
             JsonNode items = node.get("items");
             if (items != null && items.isArray()) {
                 for (JsonNode canvasNode : items) {
-                    String canvasId = canvasNode.has("id") ? canvasNode.get("id").asText() : null;
-                    String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asText() : null;
+                    String canvasId = canvasNode.has("id") ? canvasNode.get("id").asString() : null;
+                    String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asString() : null;
                     int width = canvasNode.has("width") ? canvasNode.get("width").asInt() : 0;
                     int height = canvasNode.has("height") ? canvasNode.get("height").asInt() : 0;
                     String imageInfoId = null;
                     if (canvasNode.has("items") && canvasNode.get("items").isArray()
                             && canvasNode.get("items").size() > 0) {
-                        imageInfoId = canvasNode.get("items").get(0).get("id").asText();
+                        imageInfoId = canvasNode.get("items").get(0).get("id").asString();
                     }
                     List<SeeAlsoRef> seeAlsoRefs = extractSeeAlso(canvasNode);
                     if (canvasId != null) {
@@ -291,10 +291,10 @@ public class IiifManifest {
         JsonNode seeAlsoNode = canvasNode.get("seeAlso");
         if (seeAlsoNode != null && seeAlsoNode.isArray()) {
             for (JsonNode ref : seeAlsoNode) {
-                String refId = ref.has("id") ? ref.get("id").asText() : null;
-                String refType = ref.has("type") ? ref.get("type").asText() : null;
-                String refFormat = ref.has("format") ? ref.get("format").asText() : null;
-                String refProfile = ref.has("profile") ? ref.get("profile").asText() : null;
+                String refId = ref.has("id") ? ref.get("id").asString() : null;
+                String refType = ref.has("type") ? ref.get("type").asString() : null;
+                String refFormat = ref.has("format") ? ref.get("format").asString() : null;
+                String refProfile = ref.has("profile") ? ref.get("profile").asString() : null;
                 if (refId != null) {
                     seeAlsoRefs.add(new SeeAlsoRef(refId, refType, refFormat, refProfile));
                 }
@@ -327,8 +327,8 @@ public class IiifManifest {
                 arr.add(replaceBaseUri(node.get(i), oldBase, newBase));
             }
             return arr;
-        } else if (node.isTextual()) {
-            String text = node.asText();
+        } else if (node.isString()) {
+            String text = node.asString();
             if (text.startsWith(oldBase) && !oldBase.equals(newBase)) {
                 return MAPPER.getNodeFactory().stringNode(text.replace(oldBase, newBase));
             }

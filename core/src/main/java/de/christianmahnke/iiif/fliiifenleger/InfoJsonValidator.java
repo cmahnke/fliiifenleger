@@ -8,6 +8,8 @@ import com.networknt.schema.Error;
 import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
+import de.christianmahnke.iiif.fliiifenleger.validation.ValidationResult;
+import de.christianmahnke.iiif.fliiifenleger.validation.Validator;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Validates {@code info.json} documents against the bundled JSON Schemas for
@@ -31,15 +35,22 @@ import java.util.List;
  * {@code trustAnchor}. On a core-only classpath (no extensions discovered)
  * extension service entries validate as generic services.
  *
- * <p>Beyond structural validation, IIIF-specific ordering rules that JSON
- * Schema expresses poorly are checked in Java: a V3 {@code @context} array
- * must end with the IIIF context, and advertised extension services require
- * their context to be present.
+ * <p>Beyond structural validation, semantic rules that JSON Schema expresses
+ * poorly are checked by pluggable {@link Validator} implementations
+ * (discovered via {@link java.util.ServiceLoader}): core ships the generic
+ * IIIF rules, the extension modules own their service semantics (see
+ * {@link de.christianmahnke.iiif.fliiifenleger.validation.Validator}).
  */
 public final class InfoJsonValidator {
 
     public static final String V2_CONTEXT = "http://iiif.io/api/image/2/context.json";
     public static final String V3_CONTEXT = "http://iiif.io/api/image/3/context.json";
+
+    /**
+     * Discovered validators by name, mirroring {@code Tiler.SOURCE_REGISTRY}
+     * / {@code SINK_REGISTRY} (see {@code info list-validators}).
+     */
+    public static final Map<String, Validator> VALIDATOR_REGISTRY = loadValidators();
 
     private static final String V2_SCHEMA_RESOURCE = "/schema/image-api-2-info.json";
     private static final String V3_SCHEMA_RESOURCE = "/schema/image-api-3-info.json";
@@ -56,7 +67,10 @@ public final class InfoJsonValidator {
     private InfoJsonValidator() {
     }
 
-    public record ValidationResult(boolean valid, List<String> errors, ImageInfo.IIIFVersion detectedVersion) {
+    protected static Map<String, Validator> loadValidators() {
+        Map<String, Validator> validators = new ConcurrentHashMap<>();
+        Validator.loadAll().forEach(validator -> validators.put(validator.getName(), validator));
+        return validators;
     }
 
     public static ValidationResult validate(Path infoJson) throws IOException {
@@ -120,6 +134,33 @@ public final class InfoJsonValidator {
     }
 
     /**
+     * Runs every discovered {@link Validator} accepting the effective
+     * version and merges their {@link ValidationResult}s.
+     *
+     * @param node    The parsed {@code info.json} document (a JSON object).
+     * @param version The effective IIIF Image API version.
+     * @return The merged validator errors (without version information; the
+     *         caller supplies its own detection result).
+     */
+    protected static List<String> semanticChecks(JsonNode node, ImageInfo.IIIFVersion version) {
+        List<String> errors = new ArrayList<>();
+        for (Validator validator : VALIDATOR_REGISTRY.values()) {
+            if (!validator.supports(version)) {
+                continue;
+            }
+            try {
+                ValidationResult result = validator.validate(node, version);
+                if (result != null) {
+                    errors.addAll(result.errors());
+                }
+            } catch (Exception e) {
+                errors.add("validator '" + validator.getName() + "' failed: " + e.getMessage());
+            }
+        }
+        return errors;
+    }
+
+    /**
      * Detects the IIIF Image API major version from {@code @context} (and, as
      * a fallback, {@code @id} vs {@code id}/{@code type}).
      *
@@ -128,8 +169,8 @@ public final class InfoJsonValidator {
     public static ImageInfo.IIIFVersion detectVersion(JsonNode node) {
         JsonNode context = node.get("@context");
         if (context != null) {
-            if (context.isTextual()) {
-                String ctx = context.asText();
+            if (context.isString()) {
+                String ctx = context.asString();
                 if (V3_CONTEXT.equals(ctx)) {
                     return ImageInfo.IIIFVersion.V3;
                 }
@@ -138,11 +179,11 @@ public final class InfoJsonValidator {
                 }
             } else if (context.isArray()) {
                 for (JsonNode entry : context) {
-                    if (entry.isTextual()) {
-                        if (V3_CONTEXT.equals(entry.asText())) {
+                    if (entry.isString()) {
+                        if (V3_CONTEXT.equals(entry.asString())) {
                             return ImageInfo.IIIFVersion.V3;
                         }
-                        if (V2_CONTEXT.equals(entry.asText())) {
+                        if (V2_CONTEXT.equals(entry.asString())) {
                             return ImageInfo.IIIFVersion.V2;
                         }
                     }
@@ -159,61 +200,6 @@ public final class InfoJsonValidator {
             return ImageInfo.IIIFVersion.V2;
         }
         return null;
-    }
-
-    protected static List<String> semanticChecks(JsonNode node, ImageInfo.IIIFVersion version) {
-        List<String> errors = new ArrayList<>();
-        if (version == ImageInfo.IIIFVersion.V3) {
-            JsonNode context = node.get("@context");
-            if (context != null && context.isArray() && !context.isEmpty()) {
-                JsonNode last = context.get(context.size() - 1);
-                if (!last.isTextual() || !V3_CONTEXT.equals(last.asText())) {
-                    errors.add("@context: the IIIF Image API 3 context must be the last entry of the array");
-                }
-            }
-            List<String> contexts = new ArrayList<>();
-            if (context != null) {
-                if (context.isTextual()) {
-                    contexts.add(context.asText());
-                } else if (context.isArray()) {
-                    for (JsonNode entry : context) {
-                        if (entry.isTextual()) {
-                            contexts.add(entry.asText());
-                        }
-                    }
-                }
-            }
-            JsonNode service = node.get("service");
-            if (service != null && service.isArray()) {
-                for (JsonNode entry : service) {
-                    String profile = textOrNull(entry.get("profile"));
-                    for (var extension : EXTENSIONS) {
-                        if (extension.profileUri().equals(profile)
-                                && !contexts.contains(extension.contextUri())) {
-                            errors.add("service: service '" + profile + "' requires @context to contain "
-                                    + extension.contextUri());
-                        }
-                    }
-                    JsonNode anchor = entry.get("trustAnchor");
-                    if (anchor != null && (!anchor.isTextual() || !isAbsoluteUri(anchor.asText()))) {
-                        errors.add("service: trustAnchor must be an absolute URI");
-                    }
-                }
-            }
-        } else {
-            if (node.has("trustAnchor") || findKey(node, "trustAnchor")) {
-                errors.add("Image API 2 must not contain the namespaced 'trustAnchor' property "
-                        + "(fixed @context); use Image API 3");
-            }
-            JsonNode profile = node.get("profile");
-            if (profile != null && profile.isArray() && !profile.isEmpty()) {
-                JsonNode first = profile.get(0);
-                if (!first.isTextual() || !first.asText().matches("^http://iiif\\.io/api/image/2/level[0-2]\\.json$")) {
-                    errors.add("profile: first entry must be the Image API 2 compliance level URI");
-                }
-            }
-        }
-        return errors;
     }
 
     protected static Schema schemaFor(ImageInfo.IIIFVersion version) {
@@ -247,37 +233,6 @@ public final class InfoJsonValidator {
     }
 
     protected static String textOrNull(JsonNode node) {
-        return node != null && node.isTextual() ? node.asText() : null;
-    }
-
-    protected static boolean isAbsoluteUri(String value) {
-        try {
-            return new java.net.URI(value).isAbsolute();
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    protected static boolean findKey(JsonNode node, String key) {
-        if (node == null) {
-            return false;
-        }
-        if (node.isObject()) {
-            if (node.has(key)) {
-                return true;
-            }
-            for (var field : node.properties()) {
-                if (findKey(field.getValue(), key)) {
-                    return true;
-                }
-            }
-        } else if (node.isArray()) {
-            for (JsonNode entry : node) {
-                if (findKey(entry, key)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return node != null && node.isString() ? node.asString() : null;
     }
 }
