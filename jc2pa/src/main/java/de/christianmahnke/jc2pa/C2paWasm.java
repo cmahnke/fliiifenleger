@@ -4,6 +4,7 @@
 // src/main/java/de/christianmahnke/jc2pa/C2paWasm.java
 package de.christianmahnke.jc2pa;
 
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmModule;
 
