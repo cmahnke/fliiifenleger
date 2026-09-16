@@ -31,8 +31,8 @@ import org.slf4j.LoggerFactory;
  * <p><b>Module memory contract:</b> every module executed through this
  * engine must export {@code wasm_alloc(size) -> ptr} and
  * {@code wasm_free(ptr, size)} — the standard ownership convention used by
- * all fliiifenleger codec crates (see the crate READMEs).  {@link
- * #allocBytes}, {@link #allocString} and friends build on these exports.
+ * all fliiifenleger codec crates (see the crate READMEs).  {@link WasmMemory}
+ * and friends build on these exports.
  *
  * <p><b>Threading:</b> WASM instances are neither thread-safe nor allowed to
  * hop host threads — every instance is bound to the single worker thread

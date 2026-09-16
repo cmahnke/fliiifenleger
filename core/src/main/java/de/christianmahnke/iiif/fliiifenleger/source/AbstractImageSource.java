@@ -44,7 +44,7 @@ protected URL url = null;
      * Returns an InputStream for a given URL.
      * @param url The URL to open a stream to.
      * @return An InputStream for the URL.
-     * @throws TilerException if the stream cannot be opened.
+     * @throws ImageSourceException if the stream cannot be opened.
      */
     public static InputStream getInputStream(URL url) throws ImageSourceException {
         try {

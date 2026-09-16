@@ -28,7 +28,10 @@ public interface ImageSource {
     URL getUrl();
 
     /**
-     * @return Loads the image from URL
+     * Loads the image from URL.
+     *
+     * @param url The URL to load the image from.
+     * @throws ImageSourceException if the image cannot be loaded.
      */
     void load(URL url)throws ImageSourceException;
 
