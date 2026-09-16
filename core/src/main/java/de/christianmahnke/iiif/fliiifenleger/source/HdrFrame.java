@@ -24,7 +24,8 @@ import java.awt.image.DataBufferByte;
  * can never silently misread HDR floats as SDR bytes.
  */
 public record HdrFrame(int width, int height, int channels, float[] pixels,
-                       TransferFunction transfer, Primaries primaries) {
+                       TransferFunction transfer, Primaries primaries,
+                       GainMap gainmap) {
 
     /** Metadata-map key for the frame object itself (see {@link HdrSource}). */
     public static final String META_FRAME = "hdr.frame";
@@ -34,6 +35,17 @@ public record HdrFrame(int width, int height, int channels, float[] pixels,
 
     /** Metadata-map key for the primaries name. */
     public static final String META_PRIMARIES = "hdr.primaries";
+
+    /**
+     * Metadata-map key for the per-tile cropped gain map (see {@link GainMap}).
+     */
+    public static final String META_GAINMAP = "hdr.gainmap";
+
+    /**
+     * Metadata-map key for the gain map's ISO 21496-1 metadata JSON
+     * (opaque domain payload, carried verbatim).
+     */
+    public static final String META_GAINMAP_METADATA = "hdr.gainmap.metadata";
 
     /** Opto-electronic transfer function of the pixel values. */
     public enum TransferFunction {
@@ -76,6 +88,128 @@ public record HdrFrame(int width, int height, int channels, float[] pixels,
         }
         if (transfer == null || primaries == null) {
             throw new IllegalArgumentException("Transfer and primaries must not be null");
+        }
+        // gainmap is nullable: null means this frame carries no gain map.
+    }
+
+    /**
+     * Convenience constructor for frames without a gain map.
+     */
+    public HdrFrame(int width, int height, int channels, float[] pixels,
+                    TransferFunction transfer, Primaries primaries) {
+        this(width, height, channels, pixels, transfer, primaries, null);
+    }
+
+    /**
+     * @return {@code true} when this frame carries a gain map
+     *         (e.g. split from an UltraHDR source).
+     */
+    public boolean hasGainMap() {
+        return gainmap != null;
+    }
+
+    /**
+     * An ISO 21496-1 gain map at its own (typically subsampled) resolution:
+     * normalized float samples plus the opaque metadata JSON.
+     *
+     * <p>This is the single representation of gain-map content in the
+     * codebase: sources expose the full-image gain map through
+     * {@link HdrFrame#gainmap()}, per-tile crops travel under
+     * {@link #META_GAINMAP}. The width/height are the gain map's own —
+     * callers map primary-image coordinates through the
+     * {@code primaryWidth / gainmapWidth} ratio (separately per axis;
+     * subsampling may be non-uniform).
+     *
+     * @param width        Gain map width in pixels.
+     * @param height       Gain map height in pixels.
+     * @param channels     Sample channels: 1 (luminance) or 3 (RGB).
+     * @param pixels       Interleaved {@code width * height * channels}
+     *                     floats in [0, 1] (values outside are clamped on
+     *                     encode, mirroring {@link HdrFrame#encode}).
+     * @param metadataJson ISO 21496-1 metadata as JSON (camelCase, as
+     *                     produced by the ultrahdr WASM codec); global to
+     *                     the image, preserved verbatim per tile.
+     */
+    public record GainMap(int width, int height, int channels, float[] pixels,
+                          String metadataJson) {
+
+        public GainMap {
+            if (width <= 0 || height <= 0) {
+                throw new IllegalArgumentException(
+                    "Gain map dimensions must be positive, got " + width + "x" + height);
+            }
+            if (channels != 1 && channels != 3) {
+                throw new IllegalArgumentException(
+                    "Gain map channels must be 1 or 3, got " + channels);
+            }
+            if (pixels == null || pixels.length != width * height * channels) {
+                throw new IllegalArgumentException(
+                    "Gain map pixel buffer must hold width*height*channels floats");
+            }
+            if (metadataJson == null) {
+                throw new IllegalArgumentException("Gain map metadata JSON must not be null");
+            }
+        }
+
+        /**
+         * Crops a region (gain-map coordinates), copying the samples: the
+         * result never aliases this instance's buffer, so crops stay valid
+         * while tiles encode concurrently.
+         */
+        public GainMap crop(int x, int y, int w, int h) {
+            if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > width || y + h > height) {
+                throw new IllegalArgumentException(
+                    "Gain map crop [" + x + "," + y + " " + w + "x" + h
+                    + "] out of bounds for " + width + "x" + height);
+            }
+            float[] out = new float[w * h * channels];
+            for (int row = 0; row < h; row++) {
+                System.arraycopy(pixels, ((y + row) * width + x) * channels,
+                                 out, row * w * channels, w * channels);
+            }
+            return new GainMap(w, h, channels, out, metadataJson);
+        }
+
+        /**
+         * Renders the samples as an 8-bit image ({@code v * 255}, clamped)
+         * for JPEG re-encoding by gain-map sinks.
+         */
+        public BufferedImage toBufferedImage() {
+            return new HdrFrame(width, height, channels, pixels.clone(),
+                TransferFunction.SRGB, Primaries.BT709).toBufferedImage();
+        }
+
+        /**
+         * Wraps a decoded gain-map image as float samples in [0, 1],
+         * preserving channels: grayscale images yield 1 channel, anything
+         * else 3 (RGB).
+         */
+        public static GainMap fromBufferedImage(BufferedImage image, String metadataJson) {
+            int w = image.getWidth();
+            int h = image.getHeight();
+            int[] rgb = image.getRGB(0, 0, w, h, null, 0, w);
+            boolean gray = true;
+            for (int px : rgb) {
+                int r = (px >> 16) & 0xFF;
+                int g = (px >> 8) & 0xFF;
+                int b = px & 0xFF;
+                if (r != g || g != b) {
+                    gray = false;
+                    break;
+                }
+            }
+            int channels = gray ? 1 : 3;
+            float[] out = new float[w * h * channels];
+            for (int i = 0; i < rgb.length; i++) {
+                if (gray) {
+                    out[i] = ((rgb[i] >> 8) & 0xFF) / 255.0f;
+                } else {
+                    out[3 * i]     = ((rgb[i] >> 16) & 0xFF) / 255.0f;
+                    out[3 * i + 1] = ((rgb[i] >> 8) & 0xFF) / 255.0f;
+                    out[3 * i + 2] = (rgb[i] & 0xFF) / 255.0f;
+                }
+            }
+            return new GainMap(w, h, channels, out, metadataJson);
         }
     }
 

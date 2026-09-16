@@ -53,7 +53,7 @@ The project is a multi-module Maven project (`core`, `wasm-runtime`,
 1.  **Core Module (`core`)**: This module contains the main business logic for IIIF processing.
     *   `ImageSource`: An interface for reading different source image formats (e.g., `DefaultImageSource`, `JxlImageSource`).
     *   `TileSink`: An interface for writing image tiles to different destinations (e.g., `DefaultTileSink` for the local filesystem).
-    *   `TileEnricher`: A pluggable per-tile metadata hook (e.g., `RegionTileEnricher` records the tile region; the `ultrahdr` module adds the gain-map crop).
+    *   `TileEnricher`: A pluggable per-tile metadata hook (e.g., `RegionTileEnricher` records the tile region, which HDR sinks use to crop gain maps).
     *   `ServiceExtension`: A pluggable `info.json` service description (profile/context URIs plus a schema fragment) so schema composition stays extension-agnostic; implemented by the `jc2pa` (C2PA) and `ultrahdr` (HDR) modules.
     *   `Validator`: A pluggable `info.json` semantic check (like `ImageSource` / `TileSink`, discovered via `ServiceLoader`); core ships the generic IIIF rules (`core-context`, `core-v2`), the `jc2pa` (`c2pa`) and `ultrahdr` (`hdr`) modules own their service semantics. The `InfoJsonValidator` facade composes JSON Schema validation with every discovered validator.
     *   `Tiler`: The central class that orchestrates the process of reading a source image, calculating tile layouts, and writing the tiles and `info.json` using a `TileSink`.
@@ -311,14 +311,20 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
 ```
 
 * `--source ultrahdr` splits the source into primary image, gain map and
-  metadata; plain JPEGs without a gain map are handled like the `default`
-  source (tiles stay SDR).
-* `--sink ultrahdr` wraps a delegate sink and assembles each tile with its
-  cropped gain map and the original metadata.  Tiles from gain-map-less
-  sources pass through unchanged.
-* The per-tile gain-map crop is contributed through the generic
-  `TileEnricher` SPI (`GainMapTileEnricher` in the `ultrahdr` module), so
-  core stays free of HDR-specific code; stacking sinks (e.g. C2PA over
+  metadata, exposed as an `HdrFrame` carrying the gain map at its native
+  (subsampled) resolution; plain JPEGs without a gain map are handled like
+  the `default` source (tiles stay SDR).
+* `--sink ultrahdr` opts into HDR (`supportsHdr()`), wraps a delegate sink
+  and assembles each tile with its gain map and the original metadata.
+  The sink crops the gain map itself from the shared frame through the
+  tile region (`iiif.region.*` keys), mapping primary coordinates through
+  the per-axis primary/gainmap ratio at the tile scale — so subsampled
+  (even non-uniformly subsampled) gain maps stay proportional at every
+  zoom level.  Tiles from gain-map-less, non-HDR sources pass through
+  unchanged.
+* True-HDR input without a gain map (e.g. JXL PQ/HLG) gets one derived
+  transparently in the sink before assembly (see HDR content transport);
+  sources never know about gain maps.  Stacking sinks (e.g. C2PA over
   UltraHDR) advertises both capabilities in `info.json`.
 * Options: `delegate` (delegate sink, default `default`), `runtime` (WASM
   engine, default `auto`), `quality` (primary re-encode, default `90`),
@@ -343,15 +349,26 @@ see Parallel WASM lanes).
 interfaces, but it can only carry 8-bit SDR (`java.awt` cannot express
 PQ/HLG transfers, and every imaging library reads image contents as
 SDR).  Full-range HDR therefore travels alongside, never inside, the
-image — mirroring the gain-map pattern:
+image:
 
 * Sources that can provide HDR implement the `HdrSource` capability
   (`getHdrFrame()` → interleaved f32 pixels plus transfer/primaries,
-  e.g. the `jxl-wasm` bridge decoding JXL PQ/HLG codestreams).
+  e.g. the `jxl-wasm` bridge decoding JXL PQ/HLG codestreams, or the
+  `ultrahdr` source exposing its split gain map at native resolution
+  inside the frame).  A `null` frame means no HDR content.
 * Sinks opt in with `supportsHdr()` (default `false`); the `Tiler`
   materializes and attaches the `hdr.*` metadata keys only then, so
   unaware sinks neither see nor pay for HDR — plain SDR tiles, byte
-  for byte as before.
+  for byte as before.  The attached frame is shared by reference across
+  a source image's tile tasks (built once, read-only).
+* The `ultrahdr` sink consumes the frame per tile: carried gain maps are
+  cropped to the tile region (see above); true-HDR frames without one
+  get a gain map derived in-sink (`HdrGainMapDeriver`: linearize per
+  transfer with a 100-nit diffuse anchor, per-channel ratio against the
+  delegate-rendered SDR base, log-domain normalize, quarter-resolution
+  RGB plane, synthesized ISO metadata following the `ultrahdr-core`
+  convention) before WASM assembly.  Gain maps are therefore an
+  UltraHDR-sink-only concern — transparent to sources.
 * `getImage()` always yields the SDR rendition (clamp + sRGB, TwelveMonkeys-style),
   which is also what validation and reassembly operate on.
 

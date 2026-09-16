@@ -9,6 +9,8 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.DefaultTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 
 import org.junit.jupiter.api.AfterAll;
@@ -128,11 +130,12 @@ class UltraHdrTileSinkTest {
         assertThat(primary.getWidth()).isEqualTo(64);
         assertThat(primary.getHeight()).isEqualTo(64);
 
-        GainMapData gainMap = ((GainMapSource) source).getGainMap();
-        assertThat(gainMap).isNotNull();
-        assertThat(gainMap.width()).isEqualTo(32);
-        assertThat(gainMap.height()).isEqualTo(32);
-        assertThat(gainMap.metadataJson()).contains("alternateHdrHeadroom");
+        HdrFrame frame = ((HdrSource) source).getHdrFrame();
+        assertThat(frame).isNotNull();
+        assertThat(frame.gainmap()).isNotNull();
+        assertThat(frame.gainmap().width()).isEqualTo(32);
+        assertThat(frame.gainmap().height()).isEqualTo(32);
+        assertThat(frame.gainmap().metadataJson()).contains("alternateHdrHeadroom");
     }
 
     @Test
@@ -143,30 +146,106 @@ class UltraHdrTileSinkTest {
 
         ImageSource source = ultraHdrSource(file);
         assertThat(source.getImage()).isNotNull();
-        assertThat(((GainMapSource) source).getGainMap()).isNull();
+        assertThat(((HdrSource) source).getHdrFrame()).isNull();
     }
 
     // ── UltraHdrTileSink ──────────────────────────────────────────────────────
+
+    /** 64×64 primary with a 32×32 gain map (2:1 ratio). */
+    private static HdrFrame testFrame() {
+        float[] primary = new float[64 * 64 * 3];
+        java.util.Arrays.fill(primary, 0.5f);
+        float[] gain = new float[32 * 32 * 3];
+        java.util.Arrays.fill(gain, 1.0f);
+        HdrFrame.GainMap gainMap = new HdrFrame.GainMap(32, 32, 3, gain, METADATA_JSON);
+        return new HdrFrame(64, 64, 3, primary,
+            HdrFrame.TransferFunction.SRGB, HdrFrame.Primaries.BT709, gainMap);
+    }
+
+    /** Metadata as the Tiler hands it over: HDR frame plus region keys. */
+    private Map<String, Object> frameMetadata(HdrFrame frame,
+                                              int x, int y, int w, int h, int scale) {
+        Map<String, Object> metadata = tileMetadata(x, y, w, h, scale);
+        metadata.put(HdrFrame.META_FRAME, frame);
+        return metadata;
+    }
 
     @Test
     @DisplayName("saveTile assembles an UltraHDR tile with the gain map")
     void saveTileCarriesGainMap(@TempDir Path tempDir) throws Exception {
         try (UltraHdrTileSink sink = testSink()) {
             // 64×64 primary tile, full region; gainmap crop 32×32.
-            Map<String, Object> metadata = tileMetadata(0, 0, 64, 64, 1);
-            metadata.put(GainMapData.META_METADATA, METADATA_JSON);
-            metadata.put(GainMapData.META_X, 0);
-            metadata.put(GainMapData.META_Y, 0);
-            metadata.put(GainMapData.META_W, 32);
-            metadata.put(GainMapData.META_H, 32);
-            metadata.put(GainMapData.META_IMAGE,
-                         ImageIO.read(new java.io.ByteArrayInputStream(jpeg(32, 32, 1))));
+            Map<String, Object> metadata = frameMetadata(testFrame(), 0, 0, 64, 64, 1);
 
             Path out = tempDir.resolve("tile.jpg");
             try (OutputStream os = Files.newOutputStream(out)) {
                 sink.saveTile(os, ImageIO.read(new java.io.ByteArrayInputStream(jpeg(64, 64, 0))), metadata);
             }
 
+            byte[] tile = Files.readAllBytes(out);
+            GainMapCodec.UhdrSplit split = codec.decode(tile);
+            assertThat(split.primaryJpeg()).isNotEmpty();
+            assertThat(split.gainmapJpeg()).isNotEmpty();
+            assertThat(split.metadataJson()).contains("alternateHdrHeadroom");
+        }
+    }
+
+    @Test
+    @DisplayName("sink opts into HDR so the Tiler attaches frames")
+    void sinkSupportsHdr() {
+        assertThat(new UltraHdrTileSink().supportsHdr()).isTrue();
+    }
+
+    @Test
+    @DisplayName("gain map crop stays proportional at scaled levels")
+    void cropStaysProportionalAtScale() {
+        // 64×64 region at scale 2 renders a 32×32 primary tile: the gain
+        // map crop must be 16×16 (ratio 2 preserved), not 32×32.
+        HdrFrame.GainMap cropped = UltraHdrTileSink.cropGainMap(
+            testFrame(), frameMetadata(testFrame(), 0, 0, 64, 64, 2));
+        assertThat(cropped.width()).isEqualTo(16);
+        assertThat(cropped.height()).isEqualTo(16);
+    }
+
+    @Test
+    @DisplayName("gain map crop maps non-uniform subsampling per axis")
+    void cropMapsNonUniformRatio() {
+        float[] primary = new float[64 * 32 * 3];
+        float[] gain = new float[32 * 8 * 3];
+        HdrFrame.GainMap gainMap = new HdrFrame.GainMap(32, 8, 3, gain, METADATA_JSON);
+        HdrFrame frame = new HdrFrame(64, 32, 3, primary,
+            HdrFrame.TransferFunction.SRGB, HdrFrame.Primaries.BT709, gainMap);
+        Map<String, Object> metadata = tileMetadata(0, 0, 64, 32, 1);
+        metadata.put(HdrFrame.META_FRAME, frame);
+        HdrFrame.GainMap cropped = UltraHdrTileSink.cropGainMap(frame, metadata);
+        assertThat(cropped.width()).isEqualTo(32);
+        assertThat(cropped.height()).isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("missing region keys fall back to the full gain map")
+    void cropFallsBackToFullFrame() {
+        HdrFrame frame = testFrame();
+        HdrFrame.GainMap cropped = UltraHdrTileSink.cropGainMap(
+            frame, Map.of(HdrFrame.META_FRAME, frame));
+        assertThat(cropped.width()).isEqualTo(32);
+        assertThat(cropped.height()).isEqualTo(32);
+    }
+
+    @Test
+    @DisplayName("saveTile derives a gain map for true-HDR frames")
+    void saveTileDerivesGainMap(@TempDir Path tempDir) throws Exception {
+        // LINEAR frame at 2× white, no gain map (JXL-HDR shape).
+        float[] pixels = new float[16 * 16 * 3];
+        java.util.Arrays.fill(pixels, 2.0f);
+        HdrFrame frame = new HdrFrame(16, 16, 3, pixels,
+            HdrFrame.TransferFunction.LINEAR, HdrFrame.Primaries.BT2020);
+        try (UltraHdrTileSink sink = testSink()) {
+            Map<String, Object> metadata = frameMetadata(frame, 0, 0, 16, 16, 1);
+            Path out = tempDir.resolve("tile.jpg");
+            try (OutputStream os = Files.newOutputStream(out)) {
+                sink.saveTile(os, ImageIO.read(new java.io.ByteArrayInputStream(jpeg(16, 16, 0))), metadata);
+            }
             byte[] tile = Files.readAllBytes(out);
             GainMapCodec.UhdrSplit split = codec.decode(tile);
             assertThat(split.primaryJpeg()).isNotEmpty();

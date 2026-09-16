@@ -6,6 +6,8 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 
@@ -27,17 +29,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * An {@link ImageSource} for UltraHDR JPEGs: the primary (SDR) image is
  * decoded through the regular ImageIO pipeline, while the gain map and its
  * ISO 21496-1 metadata are split out via the ultrahdr WASM codec and exposed
- * through the {@link GainMapSource} capability.
+ * through the {@link HdrSource} capability (see {@link HdrFrame#gainmap()}).
  *
  * <p>Plain JPEGs without a gain map are handled gracefully: the source
- * behaves like {@link DefaultImageSource} and {@link #getGainMap()} returns
+ * behaves like {@link DefaultImageSource} and {@link #getHdrFrame()} returns
  * {@code null}.
  *
  * <p><b>Threading:</b> the WASM codec keeps thread-affine state — see
  * {@link GainMapCodec} for the single-thread architecture.
  */
 @AutoService(ImageSource.class)
-public class UltraHdrImageSource implements ImageSource, GainMapSource {
+public class UltraHdrImageSource implements ImageSource, HdrSource {
 
     private static final Logger log = LoggerFactory.getLogger(UltraHdrImageSource.class);
 
@@ -48,7 +50,7 @@ public class UltraHdrImageSource implements ImageSource, GainMapSource {
 
     private URL url;
     private byte[] sourceBytes;
-    private GainMapData gainMap;
+    private HdrFrame hdrFrame;
     private boolean splitDone;
 
     private static final AtomicLong SEQUENCE = new AtomicLong();
@@ -74,7 +76,7 @@ public class UltraHdrImageSource implements ImageSource, GainMapSource {
     @Override
     public void load(URL url) throws ImageSourceException {
         this.url = url;
-        this.gainMap = null;
+        this.hdrFrame = null;
         try {
             sourceBytes = url.openStream().readAllBytes();
         } catch (IOException e) {
@@ -135,12 +137,17 @@ public class UltraHdrImageSource implements ImageSource, GainMapSource {
         }
     }
 
-    // ── GainMapSource ─────────────────────────────────────────────────────────
+    // ── HdrSource ─────────────────────────────────────────────────────────────
 
+    /**
+     * @return The HDR frame: SDR-range primary pixels plus the split gain
+     *         map at its native (subsampled) resolution, or {@code null}
+     *         for plain JPEGs without a gain map.
+     */
     @Override
-    public GainMapData getGainMap() throws ImageSourceException {
+    public HdrFrame getHdrFrame() throws ImageSourceException {
         ensureSplit();
-        return gainMap;
+        return hdrFrame;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
@@ -182,8 +189,15 @@ public class UltraHdrImageSource implements ImageSource, GainMapSource {
                 throw new ImageSourceException("Gain map image of " + url + " could not be decoded");
             }
 
-            gainMap = new GainMapData(split.gainmapJpeg(), split.metadataJson(),
-                                      gainmapImage.getWidth(), gainmapImage.getHeight());
+            // Decode the gain map once to float samples: per-tile crops
+            // slice this plane (see HdrFrame.GainMap) instead of
+            // re-decoding the JPEG for every tile.
+            HdrFrame.GainMap gainMap = HdrFrame.GainMap.fromBufferedImage(
+                gainmapImage, split.metadataJson());
+            HdrFrame primary = HdrFrame.fromBufferedImage(delegate.getImage());
+            hdrFrame = new HdrFrame(primary.width(), primary.height(), 3,
+                primary.pixels(), HdrFrame.TransferFunction.SRGB,
+                HdrFrame.Primaries.BT709, gainMap);
         } catch (IOException e) {
             throw new ImageSourceException("Cannot split UltraHDR source " + url, e);
         }

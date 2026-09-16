@@ -13,9 +13,9 @@ import java.util.Map;
  * <p>Implementations are discovered via {@link java.util.ServiceLoader} (register
  * with {@code @AutoService(TileEnricher.class)}) and invoked for every
  * generated tile and size rendition.  This keeps domain-specific enrichment
- * (tile regions, UltraHDR gain-map crops, …) out of the core tiling loop:
- * core ships {@link RegionTileEnricher}, the {@code ultrahdr} module adds the
- * gain-map crop.
+ * (tile regions, …) out of the core tiling loop: core ships
+ * {@link RegionTileEnricher}, whose region keys HDR sinks use to crop
+ * gain maps from the attached frame.
  *
  * <p>Contract: enrichers must be stateless and thread-safe (the {@code Tiler}
  * generates tiles concurrently) and must write disjoint keys — invocation

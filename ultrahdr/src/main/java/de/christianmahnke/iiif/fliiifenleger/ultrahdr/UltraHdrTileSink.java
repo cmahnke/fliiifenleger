@@ -11,6 +11,7 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 
 import org.slf4j.Logger;
@@ -25,14 +26,18 @@ import java.util.Map;
 
 /**
  * A {@link TileSink} decorator that integrates the UltraHDR gain map into
- * every tile: the delegate sink renders the primary tile, the correspondingly
- * cropped gain map (provided by the {@code Tiler} through the metadata map,
- * see the {@link GainMapData}
- * key constants) is re-encoded, and the ultrahdr WASM codec assembles both
- * into an UltraHDR JPEG that is written to the real output stream.
+ * every tile: the delegate sink renders the primary tile, the gain map for
+ * the tile region is cropped from the {@link HdrFrame} the {@code Tiler}
+ * attaches through the metadata map (see {@link HdrFrame#META_FRAME}),
+ * re-encoded, and the ultrahdr WASM codec assembles both into an UltraHDR
+ * JPEG that is written to the real output stream.
  *
- * <p>Tiles from sources without a gain map pass through unchanged (the
- * metadata entries are simply absent).
+ * <p>Gain maps stay transparent to sources: when the frame carries one
+ * (UltraHDR input) it is cropped through the primary/gainmap resolution
+ * ratio; when it does not (true-HDR input such as JXL PQ/HLG) one is
+ * derived in-sink (see {@link HdrGainMapDeriver}) before assembly.
+ * Tiles from sources without any HDR content pass through unchanged (no
+ * frame is attached).
  *
  * <p><b>info.json:</b> always advertises {@code https://christianmahnke.de/iiif/hdr/}
  * (V3 service + {@code extraFeatures}, V2 {@code supports} entry).
@@ -144,6 +149,20 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
         return "ultrahdr";
     }
 
+    /**
+     * Opts into HDR: the {@code Tiler} attaches the source's
+     * {@link HdrFrame} to every tile's metadata, which this sink crops
+     * (or derives a gain map from) for assembly.
+     *
+     * <p>The attached frame is shared by reference across the tile tasks
+     * of one source image and only read from, so concurrent crops are
+     * safe; building it costs one cached float frame per source image.
+     */
+    @Override
+    public boolean supportsHdr() {
+        return true;
+    }
+
     @Override
     public String getDescription() {
         return "UltraHDR gain-map tile sink assembling delegate tiles with cropped gain maps via WASM.";
@@ -237,35 +256,113 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
             delegate().saveTile(primary, image, metadata);
             byte[] primaryBytes = primary.toByteArray();
 
-            BufferedImage gainmapTile = imageMeta(metadata, GainMapData.META_IMAGE);
-            String metadataJson = stringMeta(metadata, GainMapData.META_METADATA);
-
-            if (gainmapTile == null || metadataJson == null) {
-                // Source had no gain map (or the Tiler could not crop it) —
-                // pass the plain tile through unchanged.
-                log.debug("No gain map in metadata; writing plain tile");
+            HdrFrame frame = frameMeta(metadata, HdrFrame.META_FRAME);
+            if (frame == null) {
+                // Source offers no HDR content — pass the plain tile through
+                // unchanged.
+                log.debug("No HDR frame in metadata; writing plain tile");
                 outputStream.write(primaryBytes);
                 return;
             }
 
-            // 2. Encode the gain map tile at its native resolution.
+            // 2. Gain-map tile for this region: crop the carried gain map
+            // through the primary/gainmap resolution ratio, or derive one
+            // from true-HDR pixels (transparent to sources).
+            HdrFrame.GainMap gainmapTile;
+            String metadataJson;
+            if (frame.hasGainMap()) {
+                gainmapTile = cropGainMap(frame, metadata);
+                metadataJson = frame.gainmap().metadataJson();
+            } else {
+                try {
+                    HdrGainMapDeriver.Derivation derived = deriveGainMap(frame, image, metadata);
+                    gainmapTile = derived.gainMap();
+                    metadataJson = derived.metadataJson();
+                } catch (IllegalArgumentException e) {
+                    log.warn("Gain map derivation failed; writing plain tile: {}", e.getMessage());
+                    outputStream.write(primaryBytes);
+                    return;
+                }
+            }
+
+            // 3. Encode the gain map tile at its native (cropped) resolution.
             ByteArrayOutputStream gainmapBytes = new ByteArrayOutputStream();
-            if (!ImageIO.write(gainmapTile, "jpg", gainmapBytes)) {
+            if (!ImageIO.write(gainmapTile.toBufferedImage(), "jpg", gainmapBytes)) {
                 throw new TileSinkException("No JPEG writer for the gain map tile");
             }
 
-            // 3. Assemble the UltraHDR tile.
+            // 4. Assemble the UltraHDR tile.
             byte[] assembled = codec().encode(
                 primaryBytes, gainmapBytes.toByteArray(), metadataJson,
                 quality, gainmapQuality);
 
-            // 4. Write the assembled tile to the real destination.
+            // 5. Write the assembled tile to the real destination.
             outputStream.write(assembled);
         } catch (IOException e) {
             throw new TileSinkException("Failed to write UltraHDR tile", e);
         } catch (RuntimeException e) {
             throw new TileSinkException("Failed to assemble UltraHDR tile: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Crops the frame's gain map to the tile region.
+     *
+     * <p>The region comes from the {@code iiif.region.*} keys the core
+     * {@code RegionTileEnricher} records for every tile (source-image
+     * pixels plus scale factor); mapping through the per-axis
+     * {@code primary / gainmap} ratio accounts for subsampled (and
+     * possibly non-uniformly subsampled) gain maps, rounding outwards so
+     * the crop always fully covers the tile — ISO 21496-1 readers scale
+     * the gain map back, so slight over-coverage is harmless.
+     */
+    static HdrFrame.GainMap cropGainMap(HdrFrame frame, Map<String, Object> metadata) {
+        HdrFrame.GainMap gainMap = frame.gainmap();
+        int[] region = regionMeta(metadata, frame.width(), frame.height());
+        int x = region[0];
+        int y = region[1];
+        int w = region[2];
+        int h = region[3];
+        int scale = region[4];
+        double ratioX = (double) frame.width() / gainMap.width();
+        double ratioY = (double) frame.height() / gainMap.height();
+        int gx0 = (int) Math.floor(x / (ratioX * scale));
+        int gy0 = (int) Math.floor(y / (ratioY * scale));
+        int gx1 = (int) Math.ceil((x + w) / (ratioX * scale));
+        int gy1 = (int) Math.ceil((y + h) / (ratioY * scale));
+        gx0 = Math.max(0, Math.min(gx0, gainMap.width() - 1));
+        gy0 = Math.max(0, Math.min(gy0, gainMap.height() - 1));
+        gx1 = Math.max(gx0 + 1, Math.min(gx1, gainMap.width()));
+        gy1 = Math.max(gy0 + 1, Math.min(gy1, gainMap.height()));
+        return gainMap.crop(gx0, gy0, gx1 - gx0, gy1 - gy0);
+    }
+
+    /**
+     * Derives a gain map from true-HDR pixels for the tile region; the
+     * region mapping is the identity (same image) at the tile scale.
+     */
+    static HdrGainMapDeriver.Derivation deriveGainMap(HdrFrame frame, BufferedImage image,
+                                                      Map<String, Object> metadata) {
+        int[] region = regionMeta(metadata, frame.width(), frame.height());
+        return HdrGainMapDeriver.derive(frame, region[0], region[1], region[2], region[3], image);
+    }
+
+    /**
+     * Reads the tile region (source-image pixels + scale) recorded by the
+     * core region enricher; falls back to the full frame when absent
+     * (e.g. direct API use without the {@code Tiler}).
+     */
+    private static int[] regionMeta(Map<String, Object> metadata, int fullW, int fullH) {
+        int x = intMeta(metadata, "iiif.region.x", 0);
+        int y = intMeta(metadata, "iiif.region.y", 0);
+        int w = intMeta(metadata, "iiif.region.w", fullW);
+        int h = intMeta(metadata, "iiif.region.h", fullH);
+        int scale = Math.max(1, intMeta(metadata, "iiif.region.scale", 1));
+        x = Math.max(0, Math.min(x, fullW - 1));
+        y = Math.max(0, Math.min(y, fullH - 1));
+        w = Math.max(1, Math.min(w, fullW - x));
+        h = Math.max(1, Math.min(h, fullH - y));
+        return new int[]{x, y, w, h, scale};
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -359,17 +456,17 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
         }
     }
 
-    private static BufferedImage imageMeta(Map<String, Object> metadata, String key) {
+    private static HdrFrame frameMeta(Map<String, Object> metadata, String key) {
         if (metadata == null) {
             return null;
         }
-        return metadata.get(key) instanceof BufferedImage image ? image : null;
+        return metadata.get(key) instanceof HdrFrame frame ? frame : null;
     }
 
-    private static String stringMeta(Map<String, Object> metadata, String key) {
+    private static int intMeta(Map<String, Object> metadata, String key, int fallback) {
         if (metadata == null) {
-            return null;
+            return fallback;
         }
-        return metadata.get(key) instanceof String s ? s : null;
+        return metadata.get(key) instanceof Number n ? n.intValue() : fallback;
     }
 }

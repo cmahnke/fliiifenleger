@@ -5,6 +5,7 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.DefaultTileSink;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -77,7 +78,7 @@ class UltraHdrRealImageTest {
         imageSource.load(sourceFile.toUri().toURL());
         assertThat(imageSource.getWidth()).isEqualTo(1024);
         assertThat(imageSource.getHeight()).isEqualTo(1024);
-        assertThat(((GainMapSource) imageSource).getGainMap()).isNotNull();
+        assertThat(((HdrSource) imageSource).getHdrFrame().gainmap()).isNotNull();
 
         Tiler tiler = new Tiler(256, ImageInfo.IIIFVersion.V2);
         tiler.createImages(imageSource, List.of(sourceFile), tempDir.resolve("iiif"),

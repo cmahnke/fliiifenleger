@@ -465,9 +465,6 @@
       "type": "de.christianmahnke.iiif.fliiifenleger.source.StackedImageSource"
     },
     {
-      "type": "de.christianmahnke.iiif.fliiifenleger.ultrahdr.GainMapTileEnricher"
-    },
-    {
       "type": "de.christianmahnke.iiif.fliiifenleger.ultrahdr.HdrServiceExtension"
     },
     {

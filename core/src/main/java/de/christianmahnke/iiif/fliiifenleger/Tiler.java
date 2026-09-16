@@ -35,9 +35,8 @@ public class Tiler {
 
     /**
      * Per-tile metadata contributors, discovered via {@link ServiceLoader}.
-     * Core ships {@link de.christianmahnke.iiif.fliiifenleger.sink.RegionTileEnricher};
-     * the {@code ultrahdr} module adds the gain-map crop.  Enrichers must be
-     * stateless: tiles are generated concurrently.
+     * Core ships {@link de.christianmahnke.iiif.fliiifenleger.sink.RegionTileEnricher}.
+     * Enrichers must be stateless: tiles are generated concurrently.
      */
     protected static final List<TileEnricher> TILE_ENRICHERS = loadEnrichers();
 
@@ -407,7 +406,15 @@ public class Tiler {
                     Files.createDirectories(outputPath.getParent());
                     log.debug("Writing tile to {}", outputPath);
                     try (OutputStream os = Files.newOutputStream(outputPath)) {
-                        Map<String, Object> meta = enrichMetadata(imageInfo, 0, 0, size.width(), size.height(), 1);
+                        // Full-image region in source pixels plus the real
+                        // downscale factor: enrichers (and HDR sinks cropping
+                        // through iiif.region keys) work in source
+                        // coordinates, not rendition pixels.
+                        double sizeScale = (double) imageInfo.getImage().getWidth() / size.width();
+                        int sizeScaleInt = Math.max(1, (int) Math.round(sizeScale));
+                        Map<String, Object> meta = enrichMetadata(imageInfo, 0, 0,
+                            imageInfo.getImage().getWidth(), imageInfo.getImage().getHeight(),
+                            sizeScaleInt);
                         attachHdrMetadata(imageInfo, sink, meta);
                         sink.saveTile(os, scaledImage, meta);
                     }
@@ -418,7 +425,8 @@ public class Tiler {
                         Files.createDirectories(fullOutputPath.getParent());
                         log.debug("Writing tile to {}", fullOutputPath);
                         try (OutputStream os = Files.newOutputStream(fullOutputPath)) {
-                            Map<String, Object> fullMeta = enrichMetadata(imageInfo, 0, 0, size.width(), size.height(), 1);
+                            Map<String, Object> fullMeta = enrichMetadata(imageInfo, 0, 0,
+                                imageInfo.getImage().getWidth(), imageInfo.getImage().getHeight(), 1);
                             attachHdrMetadata(imageInfo, sink, fullMeta);
                             sink.saveTile(os, scaledImage, fullMeta);
                         }
@@ -479,7 +487,7 @@ public class Tiler {
 
     /**
      * Builds the per-tile metadata map: a copy of the source metadata enriched
-     * by every {@link TileEnricher} (tile region, gain-map crops, …).
+     * by every {@link TileEnricher} (tile region, …).
      *
      * @param imageInfo The image info (source and primary dimensions).
      * @param x         Tile region X in source-image pixels.

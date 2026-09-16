@@ -9,9 +9,13 @@ package de.christianmahnke.iiif.fliiifenleger.source;
  * <p>Sources keep returning an 8-bit SDR {@code BufferedImage} from
  * {@link ImageSource#getImage()} (tone-mapped preview — always safe for
  * legacy consumers); HDR-aware sinks additionally pull the unclamped
- * frame here.  This mirrors the {@code GainMapSource} capability in the
- * {@code ultrahdr} module, but carries scene/display-referred floats
- * instead of container gain-map bytes.
+ * frame here.
+ *
+ * <p>The frame may carry an ISO 21496-1 gain map at its own (typically
+ * subsampled) resolution (see {@link HdrFrame#gainmap()}): this is how
+ * UltraHDR sources expose their gain map.  A {@code null} return means
+ * the source currently offers no HDR content (e.g. a plain JPEG fed to
+ * an UltraHDR source) — sinks then tile the SDR rendition.
  */
 public interface HdrSource {
 
