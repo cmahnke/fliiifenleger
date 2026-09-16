@@ -172,6 +172,62 @@ public class C2paWasm implements Closeable {
         engine.free(ptr, size);
     }
 
+    /**
+     * {@code trust_anchors_set(pem_ptr, pem_len, err_ptr, err_len) -> u32}
+     *
+     * <p>Install a PEM trust anchor bundle for subsequently created
+     * readers (process-global, like all c2pa-rs settings).  Readers then
+     * report {@code "Trusted"} instead of merely {@code "Valid"} when the
+     * signing chain anchors in the bundle.  Set once before validating;
+     * use {@link #trustAnchorsClear()} afterwards for isolation.
+     *
+     * @param pem PEM bundle (one or more certificates), validated eagerly.
+     * @throws C2paException if the bundle is malformed.
+     */
+    public void trustAnchorsSet(String pem) throws C2paException {
+        WasmMemory mem = memory();
+        byte[] bytes = pem.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int pemPtr     = mem.allocBytes(bytes);
+        int errPtrSlot = mem.allocPtrSlot();
+        int errLenSlot = mem.allocU32Slot();
+        try {
+            int ok = call("trust_anchors_set",
+                          pemPtr, bytes.length, errPtrSlot, errLenSlot);
+            if (ok == 0) {
+                int errBufPtr = mem.readPtr(errPtrSlot);
+                int errBufLen = mem.readU32(errLenSlot);
+                String message = "unknown trust anchor error";
+                if (errBufPtr != 0 && errBufLen > 0) {
+                    message = mem.readString(errBufPtr, errBufLen);
+                    engine.free(errBufPtr, errBufLen);
+                }
+                throw new C2paException(message);
+            }
+        } finally {
+            engine.free(pemPtr, bytes.length);
+            engine.free(errPtrSlot, 4);
+            engine.free(errLenSlot, 4);
+        }
+    }
+
+    /**
+     * {@code trust_anchors_clear(err_ptr, err_len) -> u32}
+     *
+     * <p>Drop previously installed trust anchors; readers go back to
+     * unanchored validation.
+     */
+    public void trustAnchorsClear() {
+        WasmMemory mem = memory();
+        int errPtrSlot = mem.allocPtrSlot();
+        int errLenSlot = mem.allocU32Slot();
+        try {
+            engine.execExport("trust_anchors_clear", errPtrSlot, errLenSlot);
+        } finally {
+            engine.free(errPtrSlot, 4);
+            engine.free(errLenSlot, 4);
+        }
+    }
+
     // ── Reader exports ────────────────────────────────────────────────────────
 
     /**

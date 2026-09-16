@@ -24,6 +24,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -247,6 +248,10 @@ public class Main implements Runnable {
                 description = "Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest.")
         private boolean checkC2pa;
 
+        @Option(names = {"--trust-anchor"},
+                description = "PEM trust anchor bundle for --check-c2pa: tiles must validate as Trusted against it (exit code 2 otherwise). Without it, presence of a (valid) manifest suffices.")
+        private Path trustAnchor;
+
         @Option(names = {"--schema"}, description = "Validate info.json against its JSON Schema before reassembly. Values: auto, 2, 3, off.", defaultValue = "auto")
         private String schemaMode;
 
@@ -295,35 +300,94 @@ public class Main implements Runnable {
         /**
          * Reports the C2PA manifest status of every fetched tile.
          *
-         * @return 0 when every tile carries a manifest, 2 otherwise.
+         * <p>Without {@code --trust-anchor}, presence of a (valid) manifest
+         * suffices.  With it, every tile must validate as {@code Trusted}
+         * against the anchor bundle.
+         *
+         * @return 0 when every tile passes, 2 otherwise.
          */
         private int checkC2paManifests(Map<String, byte[]> tileBytes) {
             int signed = 0;
             int unsigned = 0;
             try (TileSigner signer = new TileSigner((String) null)) {
-                for (Map.Entry<String, byte[]> tile : tileBytes.entrySet()) {
-                    String label;
+                if (trustAnchor != null) {
+                    String pem;
                     try {
-                        label = signer.activeLabel(tile.getValue(), "image/jpeg");
+                        pem = Files.readString(trustAnchor);
                     } catch (Exception e) {
-                        label = null;
-                        log.warn("C2PA check failed for {}: {}", tile.getKey(), e.getMessage());
+                        log.error("Cannot read trust anchor bundle {}: {}", trustAnchor, e.getMessage());
+                        return 1;
                     }
-                    if (label != null) {
-                        log.info("C2PA {} -> manifest {}", tile.getKey(), label);
-                        signed++;
+                    try {
+                        signer.setTrustAnchors(pem);
+                    } catch (Exception e) {
+                        log.error("Invalid trust anchor bundle {}: {}", trustAnchor, e.getMessage());
+                        return 1;
+                    }
+                    log.info("Validating C2PA manifests against trust anchor {}", trustAnchor);
+                }
+                for (Map.Entry<String, byte[]> tile : tileBytes.entrySet()) {
+                    if (trustAnchor != null) {
+                        String state;
+                        try {
+                            state = unquote(signer.validationState(tile.getValue(), "image/jpeg"));
+                        } catch (Exception e) {
+                            state = null;
+                            log.warn("C2PA check failed for {}: {}", tile.getKey(), e.getMessage());
+                        }
+                        if ("Trusted".equalsIgnoreCase(state)) {
+                            log.info("C2PA {} -> trusted manifest", tile.getKey());
+                            signed++;
+                        } else {
+                            log.warn("C2PA {} -> not trusted (state: {})", tile.getKey(), state);
+                            unsigned++;
+                        }
                     } else {
-                        log.warn("C2PA {} -> no valid manifest", tile.getKey());
-                        unsigned++;
+                        String label;
+                        try {
+                            label = signer.activeLabel(tile.getValue(), "image/jpeg");
+                        } catch (Exception e) {
+                            label = null;
+                            log.warn("C2PA check failed for {}: {}", tile.getKey(), e.getMessage());
+                        }
+                        if (label != null) {
+                            log.info("C2PA {} -> manifest {}", tile.getKey(), label);
+                            signed++;
+                        } else {
+                            log.warn("C2PA {} -> no valid manifest", tile.getKey());
+                            unsigned++;
+                        }
                     }
                 }
             } catch (Exception e) {
                 log.error("C2PA checker failed: {}", e.getMessage(), e);
                 return 1;
+            } finally {
+                // Trust anchors are process-global: never leak them into
+                // later validations in the same JVM (e.g. test suites).
+                if (trustAnchor != null) {
+                    try (TileSigner cleaner = new TileSigner((String) null)) {
+                        cleaner.clearTrustAnchors();
+                    } catch (Exception e) {
+                        log.warn("Could not clear trust anchors: {}", e.getMessage());
+                    }
+                }
             }
             log.info("C2PA summary: {} signed, {} unsigned of {} tiles", signed, unsigned,
                      signed + unsigned);
             return unsigned == 0 ? 0 : 2;
+        }
+
+        /**
+         * Strip one pair of surrounding double quotes (the reader returns
+         * JSON-encoded strings like {@code "Trusted"}).
+         */
+        private static String unquote(String value) {
+            if (value != null && value.length() >= 2
+                    && value.startsWith("\"") && value.endsWith("\"")) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
         }
     }
 

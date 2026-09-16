@@ -1,0 +1,21 @@
+NOTICES FOR TEST FIXTURES
+=========================
+
+The files in core/src/test/resources/images/ and jxl-wasm/src/test/resources/
+are test fixtures only (never shipped in release artifacts).
+
+uhdr-pixel.jpg
+  Source: https://github.com/MishaalRahmanGH/Ultra_HDR_Samples
+  File: Originals/Ultra_HDR_Samples_Originals_05.jpg (unmodified)
+  Author: Mishaal Rahman (Pixel 6 Pro capture)
+  License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+  A real UltraHDR (JPEG/R, gain-map) photo used to test gain-map
+  splitting and HDR tiling.
+
+hdr-pq.jxl
+  Provenance: generated locally for this project — synthetic linear
+  gradient scene (peak 8.0) encoded with cjxl (libjxl) using
+  `-x color_space=Rec2100PQ`. No third-party rights involved.
+  A 256x256 32-bit float Rec.2100 PQ codestream used to test HDR
+  decoding in both JXL implementations.

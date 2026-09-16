@@ -6,6 +6,8 @@ package de.christianmahnke.iiif.fliiifenleger.jxl;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.source.AbstractImageSource;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 
@@ -27,10 +29,27 @@ import java.util.Map;
  * build, where FFM-based JNI plugins cannot run; on regular JVMs the
  * NightMonkeys variant remains the default.
  */
+/**
+ * JPEG XL image source backed by the {@code jxl_wasm} module (pure-Rust
+ * jxl-oxide decoder, no native libraries).
+ *
+ * <p>Registers under the same {@code "jxl"} name as core's NightMonkeys-based
+ * {@code JxlImageSource} — the two must never share a classpath (the native
+ * profile excludes the NightMonkeys plugin).  Intended for the GraalVM-native
+ * build, where FFM-based JNI plugins cannot run; on regular JVMs the
+ * NightMonkeys variant remains the default.
+ *
+ * <p>Also implements {@link HdrSource}: the SDR rendition ({@link #getImage})
+ * is decoded eagerly on {@link #load}, while the full-range frame
+ * ({@link #getHdrFrame}) decodes lazily on first request, so SDR-only
+ * consumers never pay for HDR.
+ */
 @AutoService(ImageSource.class)
-public class JxlWasmImageSource extends AbstractImageSource implements ImageSource {
+public class JxlWasmImageSource extends AbstractImageSource implements ImageSource, HdrSource {
 
     private BufferedImage image;
+    private byte[] jxlBytes;
+    private HdrFrame hdrFrame;
     private static final String NAME = "jxl";
 
     @Override
@@ -58,7 +77,6 @@ public class JxlWasmImageSource extends AbstractImageSource implements ImageSour
         if (this.url == null) {
             throw new IllegalStateException("URL has not been set for JxlWasmImageSource.");
         }
-        byte[] jxlBytes;
         try {
             try (var in = AbstractImageSource.getInputStream(this.url)) {
                 jxlBytes = in.readAllBytes();
@@ -73,6 +91,24 @@ public class JxlWasmImageSource extends AbstractImageSource implements ImageSour
         } catch (Exception e) {
             throw new ImageSourceException("Could not read JXL image from path: " + url, e);
         }
+        this.hdrFrame = null;
+    }
+
+    @Override
+    public synchronized HdrFrame getHdrFrame() throws ImageSourceException {
+        if (this.url == null || this.jxlBytes == null) {
+            throw new IllegalStateException("URL has not been set for JxlWasmImageSource.");
+        }
+        if (hdrFrame == null) {
+            try (JxlDecoder decoder = new JxlDecoder((String) null, 1)) {
+                hdrFrame = decoder.decodeHdr(jxlBytes);
+            } catch (JxlWasmException e) {
+                throw new ImageSourceException("Could not decode JXL HDR frame from path: " + url, e);
+            } catch (Exception e) {
+                throw new ImageSourceException("Could not read JXL image from path: " + url, e);
+            }
+        }
+        return hdrFrame;
     }
 
     /**

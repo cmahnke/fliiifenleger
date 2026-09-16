@@ -232,6 +232,61 @@ public final class TileSigner implements AutoCloseable {
         });
     }
 
+    /**
+     * Read the validation state of an asset's manifest store:
+     * {@code "Valid"}, {@code "Invalid"}, or {@code "Trusted"} (the latter
+     * only when the signing chain anchors in trust material installed via
+     * {@link #setTrustAnchors}).
+     *
+     * @param assetBytes Raw asset bytes.
+     * @param format     MIME type or file extension, e.g. {@code "image/jpeg"}.
+     * @return Validation state string.
+     * @throws C2paException         on WASM error.
+     * @throws IllegalStateException if this signer has been closed.
+     */
+    public String validationState(byte[] assetBytes, String format)
+            throws C2paException {
+        return submitRead(wasm -> {
+            try (C2paReader reader = C2paReader.fromBytes(wasm, format, assetBytes)) {
+                return reader.validationState();
+            }
+        });
+    }
+
+    /**
+     * Install a PEM trust anchor bundle for subsequently created readers
+     * (process-global in the WASM module, like all c2pa-rs settings).
+     * Readers then report {@code "Trusted"} instead of merely
+     * {@code "Valid"} when the signing chain anchors in the bundle.
+     *
+     * @param pem PEM bundle (one or more certificates), validated eagerly.
+     * @throws C2paException         if the bundle is malformed.
+     * @throws IllegalStateException if this signer has been closed.
+     */
+    public void setTrustAnchors(String pem) throws C2paException {
+        submitRead(wasm -> {
+            wasm.trustAnchorsSet(pem);
+            return null;
+        });
+    }
+
+    /**
+     * Drop previously installed trust anchors; readers go back to
+     * unanchored validation.
+     *
+     * @throws IllegalStateException if this signer has been closed.
+     */
+    public void clearTrustAnchors() {
+        try {
+            submitRead(wasm -> {
+                wasm.trustAnchorsClear();
+                return null;
+            });
+        } catch (C2paException e) {
+            throw new IllegalStateException("Clearing trust anchors failed", e);
+        }
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /**

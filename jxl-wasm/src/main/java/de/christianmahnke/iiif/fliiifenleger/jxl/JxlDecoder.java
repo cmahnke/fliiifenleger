@@ -4,6 +4,7 @@
 // src/main/java/de/christianmahnke/iiif/fliiifenleger/jxl/JxlDecoder.java
 package de.christianmahnke.iiif.fliiifenleger.jxl;
 
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmLanePool;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
@@ -187,6 +188,78 @@ public final class JxlDecoder implements AutoCloseable {
     }
 
     /**
+     * Decode JPEG XL bytes to a full-range HDR frame.
+     *
+     * <p>Pixels arrive in the codestream's native encoding (see
+     * {@link HdrFrame.TransferFunction}) with no tone mapping applied —
+     * pair with an HDR-aware sink.  For the SDR rendition, use
+     * {@link #decode(byte[])} (tone-mapped) or
+     * {@link HdrFrame#toBufferedImage()}.
+     *
+     * @param jxlBytes JXL codestream bytes.
+     * @return Dimensions, channels, float pixels and color description.
+     * @throws JxlWasmException    on WASM error (corrupt input, implausible
+     *                             dimensions, unreadable color info).
+     * @throws IllegalStateException if this decoder has been closed.
+     */
+    public HdrFrame decodeHdr(byte[] jxlBytes) throws JxlWasmException {
+        return submit(wasm -> {
+            WasmMemory mem = wasm.memory();
+
+            int dataPtr     = mem.allocBytes(jxlBytes);
+            int dataLen     = jxlBytes.length;
+            int outLenSlot  = mem.allocU32Slot();
+            int outWSlot    = mem.allocU32Slot();
+            int outHSlot    = mem.allocU32Slot();
+            int outChanSlot = mem.allocU32Slot();
+            int errPtrSlot  = mem.allocPtrSlot();
+            int errLenSlot  = mem.allocU32Slot();
+
+            int resultPtr;
+            try {
+                resultPtr = wasm.jxlDecodeHdr(
+                    dataPtr, dataLen, outLenSlot,
+                    outWSlot, outHSlot, outChanSlot,
+                    errPtrSlot, errLenSlot);
+            } finally {
+                wasm.engine().free(dataPtr, dataLen);
+            }
+
+            // Fresh slots per call (see decode).
+            checkError(wasm, resultPtr, errPtrSlot, errLenSlot);
+
+            int len      = mem.readU32(outLenSlot);
+            int width    = mem.readU32(outWSlot);
+            int height   = mem.readU32(outHSlot);
+            int channels = mem.readU32(outChanSlot);
+            if (width <= 0 || height <= 0 || channels <= 0 || len <= 0
+                    || len != width * height * channels * 4) {
+                wasm.engine().free(resultPtr, len);
+                wasm.engine().free(outLenSlot, 4);
+                wasm.engine().free(outWSlot, 4);
+                wasm.engine().free(outHSlot, 4);
+                wasm.engine().free(outChanSlot, 4);
+                throw new JxlWasmException(
+                    "Decoder returned implausible HDR dimensions: "
+                    + width + "x" + height + "x" + channels);
+            }
+            byte[] raw = mem.readBytes(resultPtr, len);
+            wasm.engine().free(resultPtr, len);
+            float[] pixels = new float[width * height * channels];
+            java.nio.ByteBuffer.wrap(raw).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                .asFloatBuffer().get(pixels);
+            wasm.engine().free(outLenSlot, 4);
+            wasm.engine().free(outWSlot, 4);
+            wasm.engine().free(outHSlot, 4);
+            wasm.engine().free(outChanSlot, 4);
+
+            ColorInfo info = colorInfo(wasm, jxlBytes);
+            return new HdrFrame(width, height, channels, pixels,
+                                info.transfer(), info.primaries());
+        });
+    }
+
+    /**
      * @return The jxl-oxide codec version embedded in the WASM module.
      * @throws JxlWasmException    on WASM error.
      * @throws IllegalStateException if this decoder has been closed.
@@ -205,6 +278,71 @@ public final class JxlDecoder implements AutoCloseable {
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
+
+    /** Color description from the {@code jxl_color_info} export. */
+    private record ColorInfo(HdrFrame.TransferFunction transfer,
+                             HdrFrame.Primaries primaries) {
+    }
+
+    /**
+     * Read the codestream color description ({@code transfer}, {@code
+     * primaries}; fixed-shape JSON, parsed without a JSON dependency).
+     */
+    private ColorInfo colorInfo(JxlWasm wasm, byte[] jxlBytes) {
+        WasmMemory mem = wasm.memory();
+        int dataPtr    = mem.allocBytes(jxlBytes);
+        int outLenSlot = mem.allocU32Slot();
+        int errPtrSlot = mem.allocPtrSlot();
+        int errLenSlot = mem.allocU32Slot();
+        int resultPtr;
+        try {
+            resultPtr = wasm.jxlColorInfo(
+                dataPtr, jxlBytes.length, outLenSlot, errPtrSlot, errLenSlot);
+        } finally {
+            wasm.engine().free(dataPtr, jxlBytes.length);
+        }
+        checkError(wasm, resultPtr, errPtrSlot, errLenSlot);
+        int len    = mem.readU32(outLenSlot);
+        String json = mem.readString(resultPtr, len);
+        wasm.engine().free(resultPtr, len);
+        wasm.engine().free(outLenSlot, 4);
+        return new ColorInfo(parseTransfer(json), parsePrimaries(json));
+    }
+
+    private static HdrFrame.TransferFunction parseTransfer(String json) {
+        String raw = parseField(json, "transfer");
+        return switch (raw) {
+            case "srgb" -> HdrFrame.TransferFunction.SRGB;
+            case "linear" -> HdrFrame.TransferFunction.LINEAR;
+            case "pq" -> HdrFrame.TransferFunction.PQ;
+            case "hlg" -> HdrFrame.TransferFunction.HLG;
+            default -> HdrFrame.TransferFunction.UNKNOWN;
+        };
+    }
+
+    private static HdrFrame.Primaries parsePrimaries(String json) {
+        String raw = parseField(json, "primaries");
+        return switch (raw) {
+            case "bt709" -> HdrFrame.Primaries.BT709;
+            case "bt2020" -> HdrFrame.Primaries.BT2020;
+            case "display_p3" -> HdrFrame.Primaries.DISPLAY_P3;
+            default -> HdrFrame.Primaries.UNKNOWN;
+        };
+    }
+
+    /** Extract a string field from the fixed-shape color info JSON. */
+    private static String parseField(String json, String field) {
+        String key = "\"" + field + "\":\"";
+        int start = json.indexOf(key);
+        if (start < 0) {
+            throw new JxlWasmException("Color info lacks '" + field + "': " + json);
+        }
+        int end = json.indexOf('"', start + key.length());
+        if (end < 0) {
+            throw new JxlWasmException("Malformed color info: " + json);
+        }
+        return json.substring(start + key.length(), end);
+    }
 
     /** The {@code 0 = failure} convention check shared by all exports. */
     private void checkError(JxlWasm wasm, int result, int errPtrSlot, int errLenSlot) {

@@ -211,6 +211,23 @@
                             </buildArgs>
                         </configuration>
                     </plugin>
+                    <!--
+                        Chicory is excluded from this profile's classpath, so
+                        tests must not resolve the default (auto → chicory)
+                        engine: pin GraalWasm for every test JVM.  Tests that
+                        select "chicory" explicitly stay skipped/broken here
+                        by design — run them without the profile.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.6.0</version>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <wasm.engine>graalvm</wasm.engine>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
                 </plugins>
             </build>
         </profile>

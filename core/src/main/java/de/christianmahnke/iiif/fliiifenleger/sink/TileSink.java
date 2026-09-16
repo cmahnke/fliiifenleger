@@ -41,6 +41,20 @@ public interface TileSink {
     default void setOptions(Map<String, String> options) {}
 
     /**
+     * Whether this sink consumes HDR content ({@code hdr.*} metadata keys)
+     * when the source offers it.
+     *
+     * <p>The {@code Tiler} only materializes and attaches HDR payloads for
+     * sinks opting in here, so unaware sinks neither see nor pay for HDR.
+     * Additive default — existing implementations behave exactly as before.
+     *
+     * @return {@code true} if this sink reads HDR metadata keys.
+     */
+    default boolean supportsHdr() {
+        return false;
+    }
+
+    /**
      * Contributes sink-specific entries to the {@code info.json} document.
      *
      * <p>Called by the {@code Tiler} after the base document has been built.

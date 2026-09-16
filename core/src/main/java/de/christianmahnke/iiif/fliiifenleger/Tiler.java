@@ -7,7 +7,10 @@ import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.JsonNode;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileEnricher;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
+import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
+import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -405,6 +408,7 @@ public class Tiler {
                     log.debug("Writing tile to {}", outputPath);
                     try (OutputStream os = Files.newOutputStream(outputPath)) {
                         Map<String, Object> meta = enrichMetadata(imageInfo, 0, 0, size.width(), size.height(), 1);
+                        attachHdrMetadata(imageInfo, sink, meta);
                         sink.saveTile(os, scaledImage, meta);
                     }
 
@@ -415,6 +419,7 @@ public class Tiler {
                         log.debug("Writing tile to {}", fullOutputPath);
                         try (OutputStream os = Files.newOutputStream(fullOutputPath)) {
                             Map<String, Object> fullMeta = enrichMetadata(imageInfo, 0, 0, size.width(), size.height(), 1);
+                            attachHdrMetadata(imageInfo, sink, fullMeta);
                             sink.saveTile(os, scaledImage, fullMeta);
                         }
                     }
@@ -458,6 +463,7 @@ public class Tiler {
                             BufferedImage tileImg = imageInfo.getImage().crop(tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
                             try (OutputStream os = Files.newOutputStream(outputFile)) {
                                 Map<String, Object> meta = enrichMetadata(imageInfo, tileX, tileY, scaledTileWidth, scaledTileHeight, scale);
+                                attachHdrMetadata(imageInfo, sink, meta);
                                 sink.saveTile(os, tileImg, meta);
                             }
                         } catch (Exception e) {
@@ -492,5 +498,39 @@ public class Tiler {
             enricher.enrich(imageInfo.getImage(), x, y, w, h, scale, result);
         }
         return result;
+    }
+
+    /**
+     * Attaches the source HDR frame to the per-tile metadata map when the
+     * sink opted into HDR ({@link TileSink#supportsHdr}) and the source
+     * offers the {@link HdrSource} capability.
+     *
+     * <p>The payload materializes only here — sinks that do not opt in
+     * never pay for HDR decoding.  Failures degrade to SDR tiling (logged)
+     * instead of failing the tile.
+     *
+     * @param imageInfo The image info (source and primary dimensions).
+     * @param sink      The tile sink about to receive the tile.
+     * @param meta      The per-tile metadata map to extend in place.
+     */
+    protected static void attachHdrMetadata(ImageInfo imageInfo, TileSink sink,
+                                            Map<String, Object> meta) {
+        if (sink == null || !sink.supportsHdr()) {
+            return;
+        }
+        if (!(imageInfo.getImage() instanceof HdrSource hdrSource)) {
+            return;
+        }
+        try {
+            HdrFrame frame = hdrSource.getHdrFrame();
+            if (frame == null) {
+                return;
+            }
+            meta.put(HdrFrame.META_FRAME, frame);
+            meta.put(HdrFrame.META_TRANSFER, frame.transfer().name());
+            meta.put(HdrFrame.META_PRIMARIES, frame.primaries().name());
+        } catch (ImageSourceException e) {
+            log.debug("HDR frame unavailable, tiling SDR rendition: {}", e.getMessage());
+        }
     }
 }

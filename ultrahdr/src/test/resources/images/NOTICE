@@ -1,0 +1,17 @@
+NOTICES FOR TEST FIXTURES
+=========================
+
+The files here are test fixtures only (never shipped in release
+artifacts).
+
+uhdr-crop.jpg
+  Derived from Originals/Ultra_HDR_Samples_Originals_05.jpg by
+  Mishaal Rahman (Pixel 6 Pro capture), CC BY 4.0
+  https://creativecommons.org/licenses/by/4.0/
+  Source: https://github.com/MishaalRahmanGH/Ultra_HDR_Samples
+  Adaptation: 1024x1024 center crop of primary and gain map, re-encoded
+  with this project's own UltraHDR codec (metadata preserved). The full
+  original lives in core/src/test/resources/images/uhdr-pixel.jpg — see
+  NOTICE there.
+  A real-camera gain map in a small package, used to test gain-map
+  tiling end to end.

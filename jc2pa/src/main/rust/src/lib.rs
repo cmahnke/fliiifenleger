@@ -300,7 +300,13 @@ pub extern "C" fn reader_from_bytes(
     let bytes = unsafe { ptr_to_slice(data_ptr, data_len) };
     let mut stream = ByteStream::new(bytes);
 
-    let context = c2pa::Context::new();
+    let context = match reader_context() {
+        Ok(context) => context,
+        Err(e) => {
+            write_error(&e, err_ptr, err_len);
+            return 0;
+        }
+    };
     match c2pa::Reader::from_context(context).with_stream(format, &mut stream) {
         Ok(reader) => {
             clear_error(err_ptr, err_len);
@@ -311,6 +317,109 @@ pub extern "C" fn reader_from_bytes(
             0
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Trust anchors
+//
+// c2pa-rs reports `Trusted` (instead of merely `Valid`) only when the
+// signing chain anchors in configured trust material.  The WASM module
+// cannot fetch anything, so the host passes PEM explicitly.  Anchors are
+// process-global (readers are created per call, lanes share the process)
+// and apply to every reader created afterwards — set once before
+// validating, clear afterwards for test isolation.
+// ---------------------------------------------------------------------------
+
+/// Process-global PEM trust anchor bundle (set by `trust_anchors_set`).
+static TRUST_ANCHORS: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+fn trust_store() -> &'static std::sync::Mutex<Option<String>> {
+    TRUST_ANCHORS.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Build the reader context, honouring previously set trust anchors.
+///
+/// # Parameters
+/// - none.
+///
+/// # Returns
+/// A ready `c2pa::Context`, or an error string for `write_error`.
+fn reader_context() -> Result<c2pa::Context, String> {
+    let anchors = trust_store()
+        .lock()
+        .map_err(|e| format!("trust anchor store poisoned: {e}"))?
+        .clone();
+    match anchors {
+        None => Ok(c2pa::Context::new()),
+        Some(pem) => {
+            let settings = c2pa::settings::Settings::new()
+                .with_value("trust.trust_anchors", pem)
+                .map_err(|e| format!("invalid trust anchors: {e}"))?;
+            c2pa::Context::new()
+                .with_settings(settings)
+                .map_err(|e| format!("cannot apply trust anchors: {e}"))
+        }
+    }
+}
+
+/// Set the PEM trust anchor bundle used by subsequently created readers.
+///
+/// # Parameters
+/// - `pem_ptr` / `pem_len` : UTF-8 PEM bundle (one or more certificates).
+/// - `err_ptr` / `err_len` : Error output (see memory contract).
+///
+/// # Returns
+/// `1` on success, `0` on failure.
+#[no_mangle]
+pub extern "C" fn trust_anchors_set(
+    pem_ptr: *const u8,
+    pem_len: u32,
+    err_ptr: *mut *mut u8,
+    err_len: *mut u32,
+) -> u32 {
+    let pem = unsafe {
+        match ptr_to_str(pem_ptr, pem_len) {
+            Ok(s) => s.to_string(),
+            Err(e) => {
+                write_error(&e.to_string(), err_ptr, err_len);
+                return 0;
+            }
+        }
+    };
+    // Validate eagerly: a malformed bundle must fail here, not at the
+    // next reader creation.
+    if let Err(e) = c2pa::settings::Settings::new().with_value("trust.trust_anchors", pem.clone()) {
+        write_error(&format!("invalid trust anchors: {e}"), err_ptr, err_len);
+        return 0;
+    }
+    match trust_store().lock() {
+        Ok(mut slot) => {
+            *slot = Some(pem);
+            clear_error(err_ptr, err_len);
+            1
+        }
+        Err(e) => {
+            write_error(&format!("trust anchor store poisoned: {e}"), err_ptr, err_len);
+            0
+        }
+    }
+}
+
+/// Clear previously set trust anchors (readers go back to unanchored validation).
+///
+/// # Parameters
+/// - `err_ptr` / `err_len` : Error output (see memory contract).
+///
+/// # Returns
+/// Always `1`.
+#[no_mangle]
+pub extern "C" fn trust_anchors_clear(err_ptr: *mut *mut u8, err_len: *mut u32) -> u32 {
+    if let Ok(mut slot) = trust_store().lock() {
+        *slot = None;
+    }
+    clear_error(err_ptr, err_len);
+    1
 }
 
 /// Free a reader handle created by `reader_from_bytes`.

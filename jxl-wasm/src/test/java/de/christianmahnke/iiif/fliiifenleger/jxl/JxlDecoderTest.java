@@ -31,6 +31,14 @@ class JxlDecoderTest {
         }
     }
 
+    /** 256x256 Rec.2100 PQ fixture (synthetic HDR scene, see NOTICE). */
+    private static byte[] hdrFixtureBytes() throws Exception {
+        try (InputStream is = JxlDecoderTest.class.getResourceAsStream("/images/hdr-pq.jxl")) {
+            assertThat(is).as("test fixture /images/hdr-pq.jxl").isNotNull();
+            return is.readAllBytes();
+        }
+    }
+
     @Test
     @DisplayName("decode returns dimensions and non-empty pixels")
     void decodeFixture() throws Exception {
@@ -74,5 +82,45 @@ class JxlDecoderTest {
         try (JxlDecoder serial = new JxlDecoder("chicory", 1)) {
             assertThat(serial.laneCount()).isEqualTo(1);
         }
+    }
+
+    @Test
+    @DisplayName("decodeHdr reports PQ transfer and full-range floats")
+    void decodeHdrFixture() throws Exception {
+        try (JxlDecoder decoder = new JxlDecoder("chicory", 1)) {
+            de.christianmahnke.iiif.fliiifenleger.source.HdrFrame frame =
+                decoder.decodeHdr(hdrFixtureBytes());
+            assertThat(frame.width()).isEqualTo(256);
+            assertThat(frame.height()).isEqualTo(256);
+            assertThat(frame.channels()).isEqualTo(3);
+            assertThat(frame.transfer()).isEqualTo(
+                de.christianmahnke.iiif.fliiifenleger.source.HdrFrame.TransferFunction.PQ);
+            assertThat(frame.primaries()).isEqualTo(
+                de.christianmahnke.iiif.fliiifenleger.source.HdrFrame.Primaries.BT2020);
+            assertThat(frame.pixels()).hasSize(256 * 256 * 3);
+            float max = 0f;
+            for (float v : frame.pixels()) {
+                max = Math.max(max, v);
+            }
+            // Native PQ codes of the synthetic highlights (see the Rust
+            // test for the linear-space equivalent assertion).
+            assertThat(max).isGreaterThan(0.5f).isLessThanOrEqualTo(1.0f);
+        }
+    }
+
+    @Test
+    @DisplayName("bridge exposes the HDR capability with matching dimensions")
+    void bridgeHdrCapability() throws Exception {
+        JxlWasmImageSource source = new JxlWasmImageSource();
+        java.io.File fixture = new java.io.File("src/test/resources/images/hdr-pq.jxl");
+        org.junit.jupiter.api.Assertions.assertTrue(fixture.exists(), "HDR fixture must exist");
+        source.load(fixture.toURI().toURL());
+        assertThat(source.getWidth()).isEqualTo(256);
+        assertThat(source.getHeight()).isEqualTo(256);
+        de.christianmahnke.iiif.fliiifenleger.source.HdrFrame frame = source.getHdrFrame();
+        assertThat(frame.width()).isEqualTo(source.getWidth());
+        assertThat(frame.height()).isEqualTo(source.getHeight());
+        // SDR rendition stays usable alongside the HDR frame.
+        assertThat(source.getImage().getWidth()).isEqualTo(256);
     }
 }

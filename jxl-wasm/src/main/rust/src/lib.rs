@@ -171,6 +171,142 @@ pub extern "C" fn jxl_decode(
 }
 
 // ---------------------------------------------------------------------------
+// HDR decode (full-range float samples + color description)
+// ---------------------------------------------------------------------------
+
+/// Decode JPEG XL bytes to raw 32-bit float interleaved samples.
+///
+/// <p>Same contract as [`jxl_decode`], but pixels are little-endian
+/// `f32` values in the codestream's NATIVE encoding (unclamped — HDR
+/// highlights survive as-is) with no tone mapping or color conversion
+/// applied.  Pair with [`jxl_color_info`] to learn the transfer function
+/// and primaries needed to interpret them.
+///
+/// <p>Deliberately not linearized: without a CMS feature jxl-oxide cannot
+/// convert between encodings, so requesting one is a no-op — native
+/// samples plus labels is the only sound contract.
+///
+/// # Returns
+/// Pointer to the float buffer (host must free), or null on failure.
+#[no_mangle]
+pub extern "C" fn jxl_decode_hdr(
+    data_ptr: *const u8,
+    data_len: u32,
+    out_len: *mut u32,
+    out_w: *mut u32,
+    out_h: *mut u32,
+    out_channels: *mut u32,
+    err_ptr: *mut *mut u8,
+    err_len: *mut u32,
+) -> *mut u8 {
+    // SAFETY: the host passes a live buffer of data_len bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(data_ptr, data_len as usize) };
+    let image = match jxl_oxide::JxlImage::builder().read(Cursor::new(bytes)) {
+        Ok(image) => image,
+        Err(e) => {
+            write_error(&format!("jxl header: {e:?}"), err_ptr, err_len);
+            return std::ptr::null_mut();
+        }
+    };
+    if image.num_loaded_keyframes() == 0 {
+        write_error("jxl: no keyframes", err_ptr, err_len);
+        return std::ptr::null_mut();
+    }
+    let render = match image.render_frame(0) {
+        Ok(render) => render,
+        Err(e) => {
+            write_error(&format!("jxl render: {e:?}"), err_ptr, err_len);
+            return std::ptr::null_mut();
+        }
+    };
+    let mut stream = render.stream();
+    let (width, height, channels) = (stream.width(), stream.height(), stream.channels());
+    let total = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(channels as usize))
+        .unwrap_or(usize::MAX);
+    if total == 0 || total > MAX_PIXELS {
+        write_error("jxl: implausible dimensions", err_ptr, err_len);
+        return std::ptr::null_mut();
+    }
+    let mut pixels = vec![0f32; total];
+    if stream.write_to_buffer(&mut pixels) != total {
+        write_error("jxl: short frame", err_ptr, err_len);
+        return std::ptr::null_mut();
+    }
+    // SAFETY: out-pointers are caller-supplied and assumed valid.
+    unsafe {
+        *out_w = width;
+        *out_h = height;
+        *out_channels = channels;
+    }
+    clear_error(err_ptr, err_len);
+    let bytes: Vec<u8> = pixels
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    vec_to_host(bytes, out_len)
+}
+
+/// Report the color description of a JPEG XL image as JSON:
+/// `{"transfer":"pq|hlg|srgb|linear|unknown",
+///    "primaries":"bt709|bt2020|display_p3|unknown",
+///    "hdr":true|false}`.
+///
+/// <p>Transfer/primaries come from the codestream header (`hdr_type()` for
+/// the HDR cases, enum encoding otherwise; ICC-profile color is reported
+/// as unknown).  `hdr` is true for PQ/HLG content.
+///
+/// # Returns
+/// Pointer to JSON bytes (host must free), or null on failure.
+#[no_mangle]
+pub extern "C" fn jxl_color_info(
+    data_ptr: *const u8,
+    data_len: u32,
+    out_len: *mut u32,
+    err_ptr: *mut *mut u8,
+    err_len: *mut u32,
+) -> *mut u8 {
+    // SAFETY: the host passes a live buffer of data_len bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(data_ptr, data_len as usize) };
+    let image = match jxl_oxide::JxlImage::builder().read(Cursor::new(bytes)) {
+        Ok(image) => image,
+        Err(e) => {
+            write_error(&format!("jxl header: {e:?}"), err_ptr, err_len);
+            return std::ptr::null_mut();
+        }
+    };
+    use jxl_oxide::color::{ColourEncoding, Primaries, TransferFunction};
+    use jxl_oxide::HdrType;
+    let header = image.image_header();
+    let (transfer, hdr) = match image.hdr_type() {
+        Some(HdrType::Pq) => ("pq", true),
+        Some(HdrType::Hlg) => ("hlg", true),
+        None => match &header.metadata.colour_encoding {
+            // Bt709 decodes like sRGB for rendition purposes.
+            ColourEncoding::Enum(e) => match e.tf {
+                TransferFunction::Srgb | TransferFunction::Bt709 => ("srgb", false),
+                TransferFunction::Linear => ("linear", false),
+                _ => ("unknown", false),
+            },
+            ColourEncoding::IccProfile(_) => ("unknown", false),
+        },
+    };
+    let primaries = match &header.metadata.colour_encoding {
+        ColourEncoding::Enum(e) => match e.primaries {
+            Primaries::Srgb => "bt709",
+            Primaries::Bt2100 => "bt2020",
+            Primaries::P3 => "display_p3",
+            Primaries::Custom { .. } => "unknown",
+        },
+        ColourEncoding::IccProfile(_) => "unknown",
+    };
+    let json = format!("{{\"transfer\":\"{transfer}\",\"primaries\":\"{primaries}\",\"hdr\":{hdr}}}");
+    clear_error(err_ptr, err_len);
+    vec_to_host(json.into_bytes(), out_len)
+}
+
+// ---------------------------------------------------------------------------
 // Utility exports
 // ---------------------------------------------------------------------------
 
@@ -219,5 +355,31 @@ mod tests {
         assert!(jxl_oxide::JxlImage::builder()
             .read(Cursor::new(&garbage))
             .is_err());
+    }
+
+    /// Synthetic 256x256 Rec.2100 PQ fixture (see core test resources
+    /// NOTICE): the HDR path must report PQ transfer and decode
+    /// full-range floats (peak 8.0 in linear scene values survives as
+    /// samples above 1.0 — clamping would destroy them).
+    const HDR_PQ_JXL: &[u8] = include_bytes!("../test-data/hdr-pq.jxl");
+
+    #[test]
+    fn hdr_reports_pq_and_full_range_floats() {
+        let image = jxl_oxide::JxlImage::builder()
+            .read(Cursor::new(HDR_PQ_JXL))
+            .expect("header must parse");
+        assert_eq!(image.hdr_type(), Some(jxl_oxide::HdrType::Pq));
+        let render = image.render_frame(0).expect("frame must render");
+        let mut stream = render.stream();
+        assert_eq!((stream.width(), stream.height()), (256, 256));
+        let total = 256usize * 256 * stream.channels() as usize;
+        let mut pixels = vec![0f32; total];
+        assert_eq!(stream.write_to_buffer(&mut pixels), total);
+        // Native PQ codes (no CMS: no conversion to linear): the synthetic
+        // scene peaks at PQ ~0.73, well above SDR content but within [0, 1].
+        // The transfer label (checked via jxl_color_info on the Java side)
+        // is what makes these interpretable — not their magnitude.
+        let max = pixels.iter().cloned().fold(0f32, f32::max);
+        assert!(max > 0.5 && max <= 1.0, "PQ highlights expected, got max {max}");
     }
 }

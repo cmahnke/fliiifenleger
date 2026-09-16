@@ -141,6 +141,39 @@ public class JxlWasm implements Closeable {
                     errPtr, errLen);
     }
 
+    /**
+     * {@code jxl_decode_hdr(data_ptr, data_len, out_len, out_w, out_h,
+     *                      out_channels, err_ptr, err_len) -> ptr}
+     *
+     * @return Pointer to the interleaved little-endian {@code f32} pixel
+     *         buffer in the codestream's native encoding (see
+     *         {@link #jxlColorInfo}), host must free, or {@code 0} on
+     *         failure (check errPtr).
+     */
+    public int jxlDecodeHdr(int dataPtr, int dataLen, int outLenSlot,
+                            int outWSlot, int outHSlot, int outChannelsSlot,
+                            int errPtr, int errLen) {
+        return call("jxl_decode_hdr",
+                    dataPtr, dataLen, outLenSlot,
+                    outWSlot, outHSlot, outChannelsSlot,
+                    errPtr, errLen);
+    }
+
+    /**
+     * {@code jxl_color_info(data_ptr, data_len, out_len, err_ptr, err_len)
+     *          -> ptr}
+     *
+     * @return Pointer to the color description JSON
+     *         ({@code {"transfer":"…","primaries":"…","hdr":…}}, host must
+     *         free), or {@code 0} on failure (check errPtr).
+     */
+    public int jxlColorInfo(int dataPtr, int dataLen, int outLenSlot,
+                            int errPtr, int errLen) {
+        return call("jxl_color_info",
+                    dataPtr, dataLen, outLenSlot,
+                    errPtr, errLen);
+    }
+
     // ── Utility exports ───────────────────────────────────────────────────────
 
     /**

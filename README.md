@@ -218,6 +218,7 @@ Validates a IIIF endpoint by reassembling the image from its tiles and saving it
 | `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). | `jpg` |
 | `--output <path>` | `-o` | **Required.** Path to save the reassembled image. | |
 | `--check-c2pa` | | Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest. | |
+| `--trust-anchor <pem>` | | With `--check-c2pa`: validate every tile as `Trusted` against the given PEM trust anchor bundle (file). Exit code 2 if any tile is not trusted. Without it, manifest presence suffices. | |
 | `--schema <mode>` | | Validate info.json against its JSON Schema before reassembly. Values: `auto` (detect from `@context`), `2`, `3`, `off`. Exit code 1 on mismatch. | `auto` |
 
 **Example:**
@@ -306,6 +307,29 @@ through the shared `wasm-runtime` layer (pure-JVM Chicory by default).  The
 two codec modules (`jc2pa`, `ultrahdr`) are independent — each keeps one
 live WASM instance per lane (one lane per available processor by default;
 see Parallel WASM lanes).
+
+### HDR content transport
+
+`BufferedImage` stays the pixel type of the `ImageSource` / `TileSink`
+interfaces, but it can only carry 8-bit SDR (`java.awt` cannot express
+PQ/HLG transfers, and every imaging library reads image contents as
+SDR).  Full-range HDR therefore travels alongside, never inside, the
+image — mirroring the gain-map pattern:
+
+* Sources that can provide HDR implement the `HdrSource` capability
+  (`getHdrFrame()` → interleaved f32 pixels plus transfer/primaries,
+  e.g. the `jxl-wasm` bridge decoding JXL PQ/HLG codestreams).
+* Sinks opt in with `supportsHdr()` (default `false`); the `Tiler`
+  materializes and attaches the `hdr.*` metadata keys only then, so
+  unaware sinks neither see nor pay for HDR — plain SDR tiles, byte
+  for byte as before.
+* `getImage()` always yields the SDR rendition (clamp + sRGB, TwelveMonkeys-style),
+  which is also what validation and reassembly operate on.
+
+There is no standard Java HDR raster type to adopt instead (BoofCV,
+ImgLib2 and OpenCV were evaluated: SDR-range conventions, generic
+overkill, and JNI natives respectively — the latter unshippable in the
+GraalVM-native build this transport targets).
 
 ## C2PA Content Credentials
 
@@ -421,6 +445,22 @@ and parses) but not against the C2PA trust list. The
 `C2paSignWithKeysRoundTripTest` in the `jc2pa` module demonstrates the
 same flow programmatically (runtime-generated CA + end-entity,
 `signWithKeys`, read back with `C2paReader`).
+
+To validate against your own anchor instead of just checking presence,
+pass its PEM bundle — every tile must then report `Trusted` (exit code
+2 otherwise):
+
+```sh
+java -jar cli/target/fliiifenleger-cli.jar validate --check-c2pa \
+  --trust-anchor chain.pem \
+  -o reassembled.jpg https://example.com/iiif/2/my-image/info.json
+```
+
+Anchors are process-global in the WASM module (like all c2pa-rs
+settings): the CLI installs them for the validation run and clears
+them afterwards, so repeated validations in one JVM never leak trust
+between runs. `C2paTrustAnchorTest` / `ValidateTrustAnchorTest` cover
+the trusted, foreign-anchor, and malformed-bundle cases.
 
 **Technical notes:**
 * The C2PA functionality lives in the `jc2pa` module: the Rust
