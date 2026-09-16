@@ -14,7 +14,9 @@
             <item name="About" href="index.html"/>
         </menu>
 
-        <menu name="Reports">
+        <menu ref="reports"/>
+
+        <menu name="API Documentation">
             <item name="Core API" href="core/apidocs/index.html"/>
             <item name="CLI API" href="cli/apidocs/index.html"/>
             <item name="jc2pa API" href="jc2pa/apidocs/index.html"/>
