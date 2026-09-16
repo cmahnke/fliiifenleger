@@ -42,8 +42,11 @@ RUN rustup target add wasm32-wasip1 && \
 FROM ghcr.io/graalvm/native-image-community:25 AS native-builder
 
 # Install a pinned Maven (the image ships no build tools).
-ARG MAVEN_VERSION=3.9.11
-RUN curl -fsSL "https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/maven.tar.gz && \
+# dlcdn.apache.org only keeps the *latest* release, so a pinned version 404s
+# there once a newer Maven ships; archive.apache.org permanently hosts every
+# version.
+ARG MAVEN_VERSION=3.9.16
+RUN curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/maven.tar.gz && \
     tar xzf /tmp/maven.tar.gz -C /opt && \
     ln -s "/opt/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/local/bin/mvn && \
     rm /tmp/maven.tar.gz
