@@ -563,8 +563,10 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
   Packages, attaches the standalone JARs plus the Homebrew tarball
   (`fliiifenleger.tar.gz`, layout `bin/fliiifenleger` +
   `lib/fliiifenleger-cli.jar`, see `packaging/homebrew/`) to the GitHub
-  release, and publishes the Homebrew formula to the
-  `cmahnke/homebrew-fliiifenleger` tap via
+  release, builds GraalVM native binaries on Linux (`amd64` + `arm64`,
+  `native` matrix job) and attaches those as
+  `fliiifenleger-<version>-linux-<arch>.tar.gz`, and publishes the
+  Homebrew formula to the `cmahnke/homebrew-fliiifenleger` tap via
   [`homebrew-releaser`](https://github.com/marketplace/actions/homebrew-releaser).
 * `maven-site.yml` — publishes the generated Maven site (this documentation)
   to GitHub Pages on every push to `main`.
@@ -614,6 +616,19 @@ setup.  A direct (non-Homebrew) install is the attached
 
 Each `v*` release then updates `Formula/fliiifenleger.rb` in the tap
 automatically (checksum + URL); no per-release manual steps.
+
+### Native binaries
+
+`mvn -Pnative package` (requires GraalVM 25.3+ as the build JDK — the
+enforcer fails fast otherwise, and builder/polyglot versions must match
+the pinned 25.3.x artifacts) produces a self-contained `cli/target/fliiifenleger`
+binary: no JDK needed at runtime, JXL decodes through the bundled
+`jxl-wasm` module (functional but ~5× slower than the native lib), and
+Chicory is excluded from the image entirely.
+
+CI builds Linux `amd64`/`arm64` binaries on every `v*` tag (see above);
+macOS is served by the JVM artifacts (Homebrew formula), which work on
+both Apple Silicon and Intel Macs.
 
 ## License
 

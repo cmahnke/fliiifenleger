@@ -3,8 +3,10 @@ name: Maven release deploy
 # Release workflow: triggered by version tags (v*).  It runs the full test
 # suite, sets the Maven version from the tag, deploys the release artifacts
 # to GitHub Packages, attaches the standalone JARs plus the Homebrew
-# custom tarball to the GitHub release, and publishes the Homebrew formula
-# to the cmahnke/homebrew-fliiifenleger tap via homebrew-releaser.
+# custom tarball to the GitHub release, builds GraalVM native binaries on
+# Linux (amd64 + arm64 matrix) and attaches those too, and publishes the
+# Homebrew formula to the cmahnke/homebrew-fliiifenleger tap via
+# homebrew-releaser.
 
 on:
   push:
@@ -149,6 +151,125 @@ jobs:
           tar -czf fliiifenleger.tar.gz -C homebrew-stage bin lib
           gh release upload "${{ steps.version.outputs.tag }}" \
             fliiifenleger.tar.gz \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Builds GraalVM native binaries on Linux (amd64 + arm64, no
+  # cross-compilation — each leg builds natively on its own runner).
+  # macOS is covered by the JVM artifacts; there are no macOS legs
+  # (native-image is same-OS only).  Runs in parallel with `release`;
+  # each leg attaches its own asset (naming follows the
+  # homebrew-releaser target_* convention for future use).
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Derive release version from the tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Set up GraalVM
+        # Must stay on 25.3.x: the polyglot artifacts pin 25.3.4.1 and
+        # builder/library skew fails the image build (TruffleLocator).
+        uses: graalvm/setup-graalvm@v1
+        with:
+          version: '25.3'
+          distribution: 'graalvm'
+          cache: maven
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The jc2pa/jxl-wasm modules compile Rust crates to wasm32-wasip1.
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: wasm32-wasip1
+
+      # Enables the JXL image source tests in the core module.  The
+      # amd64 debs below are arch-specific; arm64 uses the distro package.
+      - name: Install JXL library (amd64)
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libstdc++6 libtcmalloc-minimal4 libgcc-s1 libc6 libhwy-dev libpng16-16 libbrotli1 libjpeg8 libgif7
+
+          wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+          tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+
+          sudo apt install -y -f ./libjxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./jxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./libjxl-dev_0.11.1_amd64.deb
+          sudo apt-get -f install
+          sudo find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
+
+      - name: Install JXL library (arm64)
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjxl-dev
+          sudo find /usr/lib -name 'libjxl.so*' -print
+          test -e /usr/lib/aarch64-linux-gnu/libjxl.so \
+            || sudo ln -s "$(sudo find /usr/lib -name 'libjxl.so.*' | head -1)" \
+                          /usr/lib/aarch64-linux-gnu/libjxl.so
+
+      - name: Configure Maven server credentials for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'SETTINGS'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${env.GITHUB_ACTOR}</username>
+                <password>${env.GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS
+
+      - name: Set Maven version from tag
+        run: |
+          mvn --batch-mode org.codehaus.mojo:versions-maven-plugin:2.17.1:set \
+            -DnewVersion=${{ steps.version.outputs.version }} \
+            -DgenerateBackupPoms=false
+
+      # Full test suite on the JVM, then the native binary.  Must NOT
+      # deploy to GitHub Packages (the release job owns the versioned
+      # deploy; a second deploy would 409).
+      - name: Build and test native binary
+        run: mvn --batch-mode -Pnative verify
+
+      - name: Smoke-test the native binary
+        run: |
+          ./cli/target/fliiifenleger --version
+          ./cli/target/fliiifenleger generate -s jxl \
+            -o ./smoke-jxl jxl-wasm/src/test/resources/images/small.jxl
+          test -f ./smoke-jxl/info.json
+
+      - name: Attach native binary to the GitHub release
+        # The release object is created by the release job (or here if
+        # this leg wins the race) — create-if-missing, then attach.
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release create "$TAG" --generate-notes --verify-tag \
+            || gh release view "$TAG" > /dev/null
+          tar -czf "fliiifenleger-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            -C cli/target fliiifenleger
+          gh release upload "$TAG" \
+            "fliiifenleger-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
             --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
