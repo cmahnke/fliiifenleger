@@ -14,7 +14,13 @@
             <item name="About" href="index.html"/>
         </menu>
 
-        <menu ref="reports"/>
+        <menu name="Reports">
+            <item name="Core API" href="core/apidocs/index.html"/>
+            <item name="CLI API" href="cli/apidocs/index.html"/>
+            <item name="jc2pa API" href="jc2pa/apidocs/index.html"/>
+            <item name="ultrahdr API" href="ultrahdr/apidocs/index.html"/>
+            <item name="wasm-runtime API" href="wasm-runtime/apidocs/index.html"/>
+        </menu>
 
     </body>
 </site>

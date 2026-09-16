@@ -32,6 +32,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Validates a served HDR (UltraHDR gain-map) endpoint end to end.
@@ -80,14 +81,80 @@ class ValidateHdrTest {
                                "http://localhost:8887/iiif/", 1, sink);
         }
 
-        // Re-point the generated info.json at the mock and serve every tile.
-        // The reassembler always requests region tiles at full size
-        // ({region}/full/0/...), so map each generated region directory to
-        // its full-size URL (the on-disk size variants are never fetched).
+        URI infoJsonUrl = serveEndpoint(endpoint);
+
+        Path out = tempDir.resolve("reassembled.jpg");
+        Main.ValidateCommand command = new Main.ValidateCommand();
+        int exit = new CommandLine(command)
+            .execute("-o", out.toString(), infoJsonUrl.toString());
+
+        assertThat(exit).isZero();
+        assertThat(out).exists();
+
+        // The reassembled file is itself an UltraHDR JPEG: primary + gain map.
+        byte[] reassembled = Files.readAllBytes(out);
+        try (GainMapCodec verifyCodec = new GainMapCodec((String) null, 1)) {
+            GainMapCodec.UhdrSplit split = verifyCodec.decode(reassembled);
+            assertThat(split.gainmapJpeg()).isNotEmpty();
+            assertThat(split.metadataJson()).contains("alternateHdrHeadroom");
+            BufferedImage primary = ImageIO.read(new java.io.ByteArrayInputStream(split.primaryJpeg()));
+            assertThat(primary.getWidth()).isEqualTo(1024);
+            assertThat(primary.getHeight()).isEqualTo(1024);
+        }
+    }
+
+    @Test
+    @DisplayName("a non-HDR endpoint reassembles to a plain SDR JPEG")
+    void sdrEndpointReassemblesSdr() throws Exception {
+        Path fixture = Path.of("src/test/resources/images/uhdr-crop.jpg");
+        assertThat(fixture).exists();
+
+        // Generate a plain (SDR) endpoint: same fixture, default sink.
+        Path endpoint = tempDir.resolve("sdr-endpoint");
+        UltraHdrImageSource source = new UltraHdrImageSource();
+        source.load(fixture.toUri().toURL());
+        DefaultTileSink sink = new DefaultTileSink();
+        sink.setOptions(Map.of("format", "jpg"));
+        Tiler tiler = new Tiler(256, ImageInfo.IIIFVersion.V2);
+        tiler.createImages(source, List.of(fixture), endpoint,
+                           "http://localhost:8887/iiif/", 1, sink);
+
+        URI infoJsonUrl = serveEndpoint(endpoint);
+
+        Path out = tempDir.resolve("sdr-reassembled.jpg");
+        int exit = new CommandLine(new Main.ValidateCommand())
+            .execute("-o", out.toString(), infoJsonUrl.toString());
+
+        assertThat(exit).isZero();
+        assertThat(out).exists();
+
+        // Without the HDR marker the output must be a plain JPEG, not UHDR.
+        byte[] bytes = Files.readAllBytes(out);
+        assertThatThrownBy(() -> {
+            try (GainMapCodec c = new GainMapCodec((String) null, 1)) {
+                c.decode(bytes);
+            }
+        }).isInstanceOf(de.christianmahnke.iiif.fliiifenleger.ultrahdr.UltraHdrException.class);
+        assertThat(ImageIO.read(new java.io.ByteArrayInputStream(bytes))).isNotNull();
+    }
+
+    /**
+     * Re-points the generated info.json at the mock and serves every region
+     * tile under the path derived from the info.json {@code @id} (which the
+     * reassembler uses to fetch tiles).
+     *
+     * @return The served info.json URL.
+     */
+    private URI serveEndpoint(Path endpoint) throws Exception {
         String infoJson = Files.readString(endpoint.resolve("info.json"))
             .replace("http://localhost:8887/iiif/", wiremock.baseUrl() + "/iiif/");
         wiremock.stubFor(get(urlEqualTo("/iiif/info.json"))
             .willReturn(aResponse().withBody(infoJson)));
+        java.util.regex.Matcher idMatcher =
+            java.util.regex.Pattern.compile("\"@id\"\\s*:\\s*\"([^\"]+)\"")
+                .matcher(infoJson);
+        assertThat(idMatcher.find()).isTrue();
+        String imagePrefix = new URI(idMatcher.group(1)).getPath();
         int served = 0;
         try (Stream<Path> tiles = Files.walk(endpoint)) {
             for (Path tile : (Iterable<Path>) tiles.filter(p -> p.toString().endsWith(".jpg"))::iterator) {
@@ -95,7 +162,7 @@ class ValidateHdrTest {
                 if (rel.getNameCount() < 2 || rel.getName(0).toString().equals("full")) {
                     continue;
                 }
-                String key = "/iiif/" + rel.getName(0) + "/full/0/default.jpg";
+                String key = imagePrefix + "/" + rel.getName(0) + "/full/0/default.jpg";
                 wiremock.stubFor(get(urlEqualTo(key))
                     .willReturn(aResponse().withBody(Files.readAllBytes(tile))
                         .withHeader("Content-Type", "image/jpeg")));
@@ -103,18 +170,7 @@ class ValidateHdrTest {
             }
         }
         assertThat(served).isGreaterThanOrEqualTo(4);
-
-        Path out = tempDir.resolve("reassembled.jpg");
-        Main.ValidateCommand command = new Main.ValidateCommand();
-        int exit = new CommandLine(command)
-            .execute("-o", out.toString(),
-                     URI.create(wiremock.baseUrl() + "/iiif/info.json").toString());
-
-        assertThat(exit).isZero();
-        assertThat(out).exists();
-        BufferedImage reassembled = ImageIO.read(out.toFile());
-        assertThat(reassembled.getWidth()).isEqualTo(1024);
-        assertThat(reassembled.getHeight()).isEqualTo(1024);
+        return URI.create(wiremock.baseUrl() + "/iiif/info.json");
     }
 
     @Test

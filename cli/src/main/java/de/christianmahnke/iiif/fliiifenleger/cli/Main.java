@@ -11,6 +11,9 @@ import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.TilerException;
 import de.christianmahnke.iiif.fliiifenleger.debug.IiifImageReassembler;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
+import de.christianmahnke.iiif.fliiifenleger.ultrahdr.GainMapCodec;
+import de.christianmahnke.iiif.fliiifenleger.ultrahdr.UltraHdrAssembler;
+import de.christianmahnke.iiif.fliiifenleger.ultrahdr.UltraHdrTileSink;
 import de.christianmahnke.jc2pa.TileSigner;
 import de.christianmahnke.iiif.fliiifenleger.source.ImageSource;
 import org.slf4j.Logger;
@@ -284,9 +287,34 @@ public class Main implements Runnable {
                 }
                 IiifImageReassembler reassembler = new IiifImageReassembler(new URI(infoJsonUrl).toURL());
                 reassembler.load();
-                BufferedImage fullImage = reassembler.reassemble(checkC2pa);
-                reassembler.saveImage(fullImage, outputPath, format);
-                log.info("Validation successful. Reassembled image saved to {}", outputPath);
+                BufferedImage fullImage = reassembler.reassemble(true);
+
+                // Write the reassembled image.  HDR endpoints (detected via
+                // the profile constant in info.json) produce a full UltraHDR
+                // JPEG; everything else falls back to the plain SDR image.
+                if (reassembler.isHdrEndpoint(UltraHdrTileSink.HDR_PROFILE_URI)) {
+                    byte[] uhdr = assembleHdr(reassembler.getFetchedTileBytes(), fullImage);
+                    if (uhdr != null) {
+                        if (!"jpg".equalsIgnoreCase(format)) {
+                            log.warn("HDR endpoints always reassemble to JPEG; ignoring --format '{}'", format);
+                        }
+                        java.nio.file.Files.write(outputPath, uhdr);
+                        log.info("Validation successful. Reassembled HDR image saved to {}", outputPath);
+                    } else {
+                        log.warn("Endpoint advertises HDR but no tile carried a gain map; writing SDR image");
+                        reassembler.saveImage(fullImage, outputPath, format);
+                        log.info("Validation successful. Reassembled image saved to {}", outputPath);
+                    }
+                } else {
+                    reassembler.saveImage(fullImage, outputPath, format);
+                    log.info("Validation successful. Reassembled image saved to {}", outputPath);
+                }
+
+                if (reassembler.getFailedTileCount() > 0) {
+                    log.error("Validation failed: {} tile(s) could not be fetched or decoded.",
+                              reassembler.getFailedTileCount());
+                    return 1;
+                }
 
                 if (checkC2pa) {
                     return checkC2paManifests(reassembler.getFetchedTileBytes());
@@ -389,6 +417,22 @@ public class Main implements Runnable {
                 return value.substring(1, value.length() - 1);
             }
             return value;
+        }
+
+        /**
+         * Reassembles the endpoint's raw tile bytes into a full UltraHDR JPEG.
+         *
+         * @param tiles     Raw tile bytes collected during reassembly.
+         * @param fullImage The stitched primary image.
+         * @return UltraHDR JPEG bytes, or {@code null} when no tile carried a
+         *         gain map.
+         * @throws Exception on a WASM codec error.
+         */
+        private static byte[] assembleHdr(Map<String, byte[]> tiles, BufferedImage fullImage)
+                throws Exception {
+            try (GainMapCodec codec = GainMapCodec.shared(null)) {
+                return new UltraHdrAssembler(codec).assemble(fullImage, tiles);
+            }
         }
     }
 

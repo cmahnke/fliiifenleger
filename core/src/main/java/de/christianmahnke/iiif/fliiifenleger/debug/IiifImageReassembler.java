@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Fetches IIIF tiles from an Image API endpoint and reassembles them into a single image.
@@ -39,6 +40,12 @@ public class IiifImageReassembler {
      * collection was requested (tile URL → asset bytes).
      */
     protected final Map<String, byte[]> fetchedTileBytes = new ConcurrentHashMap<>();
+
+    /**
+     * Count of tiles that could not be fetched or decoded during the last
+     * {@link #reassemble(boolean)} call.
+     */
+    protected final AtomicInteger failedTiles = new AtomicInteger();
 
     public IiifImageReassembler(URL url) {
         this.url = url;
@@ -68,6 +75,71 @@ public class IiifImageReassembler {
     }
 
     /**
+     * Detects whether this endpoint advertises HDR content, by looking for
+     * the given profile URI constant in the loaded {@code info.json}.
+     *
+     * <p>The marker is written by HDR sinks and appears in the Image API
+     * document as:
+     * <ul>
+     *   <li>V3 — in {@code extraFeatures}, or in a {@code service[]} entry
+     *       whose {@code profile} equals the URI;</li>
+     *   <li>V2 — in the embedded profile's {@code supports} list.</li>
+     * </ul>
+     *
+     * <p>Detection is a pure read of the already-fetched document; the URI
+     * is supplied by the caller so this core class stays codec-agnostic.
+     *
+     * @param hdrProfileUri The HDR profile URI constant (e.g.
+     *                      {@code https://christianmahnke.de/iiif/hdr/}).
+     * @return {@code true} when the endpoint advertises HDR content.
+     * @throws IllegalStateException if load() has not been called first.
+     */
+    public boolean isHdrEndpoint(String hdrProfileUri) {
+        if (infoJson == null) {
+            throw new IllegalStateException("info.json has not been loaded. Call load() first.");
+        }
+        if (hdrProfileUri == null || hdrProfileUri.isBlank()) {
+            return false;
+        }
+        // V3 extraFeatures
+        JsonNode extraFeatures = infoJson.get("extraFeatures");
+        if (containsString(extraFeatures, hdrProfileUri)) {
+            return true;
+        }
+        // V3 service[].profile
+        JsonNode services = infoJson.get("service");
+        if (services != null && services.isArray()) {
+            for (JsonNode service : services) {
+                if (hdrProfileUri.equals(service.get("profile").asString(null))) {
+                    return true;
+                }
+            }
+        }
+        // V2 embedded profile supports[] (profile is usually an array whose
+        // last element is the embedded object with a "supports" list).
+        JsonNode profile = infoJson.get("profile");
+        if (profile != null && profile.isArray()) {
+            for (JsonNode entry : profile) {
+                if (entry.isObject() && containsString(entry.get("supports"), hdrProfileUri)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsString(JsonNode node, String value) {
+        if (node != null && node.isArray()) {
+            for (JsonNode item : node) {
+                if (value.equals(item.asString(null))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Reassembles the full image from its tiles at the highest resolution.
      *
      * @return A BufferedImage containing the reassembled image.
@@ -92,6 +164,7 @@ public class IiifImageReassembler {
             throw new IllegalStateException("info.json has not been loaded. Call load() first.");
         }
         fetchedTileBytes.clear();
+        failedTiles.set(0);
 
         int fullWidth = infoJson.get("width").asInt(0);
         int fullHeight = infoJson.get("height").asInt(0);
@@ -150,9 +223,11 @@ public class IiifImageReassembler {
                             }
                         } else {
                             log.warn("Failed to load tile: {}", tileUrl);
+                            failedTiles.incrementAndGet();
                         }
                     } catch (IOException | URISyntaxException e) {
                         log.error("Error fetching tile {}: {}", tileUrl, e.getMessage());
+                        failedTiles.incrementAndGet();
                     }
                 });
                 futures.add(future);
@@ -183,6 +258,14 @@ public class IiifImageReassembler {
      */
     public Map<String, byte[]> getFetchedTileBytes() {
         return Map.copyOf(fetchedTileBytes);
+    }
+
+    /**
+     * @return The number of tiles that could not be fetched or decoded
+     *         during the last {@link #reassemble(boolean)} call.
+     */
+    public int getFailedTileCount() {
+        return failedTiles.get();
     }
 
     public void saveImage(BufferedImage image, Path outputPath, String format) throws IOException {

@@ -535,6 +535,56 @@
       ]
     },
     {
+      "type": "java.awt.GraphicsEnvironment",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getLocalGraphicsEnvironment",
+          "parameterTypes": []
+        },
+        {
+          "name": "getHeadlessGraphicsEnvironment",
+          "parameterTypes": []
+        },
+        {
+          "name": "isHeadlessInstance",
+          "parameterTypes": [
+            "java.awt.GraphicsEnvironment"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.awt.Toolkit",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getDefaultToolkit",
+          "parameterTypes": []
+        },
+        {
+          "name": "getHeadlessProperty",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.HeadlessToolkit",
+      "jniAccessible": true
+    },
+    {
+      "type": "sun.java2d.HeadlessGraphicsEnvironment",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "createGraphics",
+          "parameterTypes": [
+            "java.awt.image.BufferedImage"
+          ]
+        }
+      ]
+    },
+    {
       "type": "java.awt.DisplayMode",
       "jniAccessible": true,
       "methods": [

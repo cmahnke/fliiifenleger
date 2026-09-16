@@ -212,11 +212,22 @@ java -jar cli/target/fliiifenleger-cli.jar generate --output ./my-iiif-images /p
 ### `validate`
 Validates a IIIF endpoint by reassembling the image from its tiles and saving it to a file.
 
+HDR endpoints are detected automatically from the profile constant in
+`info.json` (the `https://christianmahnke.de/iiif/hdr/` feature/service the
+tiler writes): their tiles are gain-map JPEGs, so the reassembled output is
+a full-resolution **UltraHDR JPEG** (primary + stitched gain map + metadata),
+not a tone-mapped SDR image. Non-HDR endpoints reassemble to the plain SDR
+image as before. `--format` applies to SDR output; HDR output is always JPEG
+(any `--format` value is ignored with a warning).
+
+Any tile that cannot be fetched or decoded is now reported and fails the
+validation (exit code 1) instead of silently producing a black region.
+
 **Usage:** `fliiifenleger validate [OPTIONS] <info.json-url>`
 
 | Option | Alias | Description | Default |
 |---|---|---|---|
-| `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). | `jpg` |
+| `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). SDR only — HDR endpoints always write JPEG. | `jpg` |
 | `--output <path>` | `-o` | **Required.** Path to save the reassembled image. | |
 | `--check-c2pa` | | Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest. | |
 | `--trust-anchor <pem>` | | With `--check-c2pa`: validate every tile as `Trusted` against the given PEM trust anchor bundle (file). Exit code 2 if any tile is not trusted. Without it, manifest presence suffices. | |

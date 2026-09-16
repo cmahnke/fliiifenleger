@@ -89,15 +89,15 @@ class ManifestUpdaterTest {
         JsonNode seeAlso1 = canvases.get(0).get("seeAlso");
         assertNotNull(seeAlso1);
         assertEquals(1, seeAlso1.size());
-        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso1.get(0).get("id").asText());
-        assertEquals("Dataset", seeAlso1.get(0).get("type").asText());
-        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asText());
-        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso1.get(0).get("id").asString());
+        assertEquals("Dataset", seeAlso1.get(0).get("type").asString());
+        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asString());
+        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asString());
 
         JsonNode seeAlso2 = canvases.get(1).get("seeAlso");
         assertNotNull(seeAlso2);
         assertEquals(1, seeAlso2.size());
-        assertEquals("http://example.org/iiif/manifest/page2.xml", seeAlso2.get(0).get("id").asText());
+        assertEquals("http://example.org/iiif/manifest/page2.xml", seeAlso2.get(0).get("id").asString());
     }
 
     @Test
@@ -114,10 +114,10 @@ class ManifestUpdaterTest {
         JsonNode seeAlso1 = items.get(0).get("seeAlso");
         assertNotNull(seeAlso1);
         assertEquals(1, seeAlso1.size());
-        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso1.get(0).get("id").asText());
-        assertEquals("Dataset", seeAlso1.get(0).get("type").asText());
-        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asText());
-        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso1.get(0).get("id").asString());
+        assertEquals("Dataset", seeAlso1.get(0).get("type").asString());
+        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asString());
+        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asString());
     }
 
     @Test
@@ -129,7 +129,7 @@ class ManifestUpdaterTest {
 
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
-        assertEquals("http://custom.org/tei/page1.xml", seeAlso.get(0).get("id").asText());
+        assertEquals("http://custom.org/tei/page1.xml", seeAlso.get(0).get("id").asString());
     }
 
     @Test
@@ -159,7 +159,7 @@ class ManifestUpdaterTest {
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
         assertEquals(1, seeAlso.size());
-        assertEquals("http://example.org/iiif/manifest/Page1.XML", seeAlso.get(0).get("id").asText());
+        assertEquals("http://example.org/iiif/manifest/Page1.XML", seeAlso.get(0).get("id").asString());
     }
 
     @Test
@@ -172,7 +172,7 @@ class ManifestUpdaterTest {
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
         assertEquals(1, seeAlso.size());
-        assertEquals("http://example.org/iiif/manifest/page1.tei", seeAlso.get(0).get("id").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.tei", seeAlso.get(0).get("id").asString());
     }
 
     @Test
@@ -223,8 +223,8 @@ class ManifestUpdaterTest {
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
         assertEquals(2, seeAlso.size());
-        assertEquals("http://existing.org/doc.xml", seeAlso.get(0).get("id").asText());
-        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso.get(1).get("id").asText());
+        assertEquals("http://existing.org/doc.xml", seeAlso.get(0).get("id").asString());
+        assertEquals("http://example.org/iiif/manifest/page1.xml", seeAlso.get(1).get("id").asString());
     }
 
     @Test
@@ -239,14 +239,14 @@ class ManifestUpdaterTest {
         JsonNode seeAlso1 = canvases.get(0).get("seeAlso");
         assertNotNull(seeAlso1);
         assertEquals(1, seeAlso1.size());
-        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso1.get(0).get("id").asText());
-        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso1.get(0).get("format").asText());
-        assertEquals("Dataset", seeAlso1.get(0).get("type").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso1.get(0).get("id").asString());
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso1.get(0).get("format").asString());
+        assertEquals("Dataset", seeAlso1.get(0).get("type").asString());
         assertNull(seeAlso1.get(0).get("profile"));
 
         JsonNode seeAlso2 = canvases.get(1).get("seeAlso");
         assertNotNull(seeAlso2);
-        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso2.get(0).get("format").asText());
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso2.get(0).get("format").asString());
     }
 
     @Test
@@ -258,7 +258,7 @@ class ManifestUpdaterTest {
 
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
-        assertEquals("application/vnd.recordare.musicxml", seeAlso.get(0).get("format").asText());
+        assertEquals("application/vnd.recordare.musicxml", seeAlso.get(0).get("format").asString());
         assertNull(seeAlso.get(0).get("profile"));
     }
 
@@ -273,9 +273,9 @@ class ManifestUpdaterTest {
         JsonNode seeAlso1 = canvases.get(0).get("seeAlso");
         assertNotNull(seeAlso1);
         assertEquals(1, seeAlso1.size());
-        assertEquals("http://example.org/iiif/manifest/page1.tei.xml", seeAlso1.get(0).get("id").asText());
-        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asText());
-        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.tei.xml", seeAlso1.get(0).get("id").asString());
+        assertEquals("application/tei+xml", seeAlso1.get(0).get("format").asString());
+        assertEquals("http://tei-c.org", seeAlso1.get(0).get("profile").asString());
 
         // page2 has no file, so no seeAlso
         JsonNode seeAlso2 = canvases.get(1).get("seeAlso");
@@ -293,7 +293,7 @@ class ManifestUpdaterTest {
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
         assertEquals(1, seeAlso.size());
-        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso.get(0).get("id").asText());
+        assertEquals("http://example.org/iiif/manifest/page1.musicxml", seeAlso.get(0).get("id").asString());
     }
 
     @Test
@@ -306,8 +306,8 @@ class ManifestUpdaterTest {
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
         assertEquals(1, seeAlso.size());
-        assertEquals("http://example.org/iiif/manifest/Page1.MUSICXML", seeAlso.get(0).get("id").asText());
-        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso.get(0).get("format").asText());
+        assertEquals("http://example.org/iiif/manifest/Page1.MUSICXML", seeAlso.get(0).get("id").asString());
+        assertEquals("application/vnd.recordare.musicxml+xml", seeAlso.get(0).get("format").asString());
     }
 
     @Test
@@ -319,8 +319,8 @@ class ManifestUpdaterTest {
         JsonNode json = MAPPER.readTree(result);
 
         JsonNode canvases = json.get("sequences").get(0).get("canvases");
-        assertEquals("application/vnd.recordare.musicxml+xml", canvases.get(0).get("seeAlso").get(0).get("format").asText());
-        assertEquals("application/vnd.recordare.musicxml", canvases.get(1).get("seeAlso").get(0).get("format").asText());
+        assertEquals("application/vnd.recordare.musicxml+xml", canvases.get(0).get("seeAlso").get(0).get("format").asString());
+        assertEquals("application/vnd.recordare.musicxml", canvases.get(1).get("seeAlso").get(0).get("format").asString());
     }
 
     @Test
@@ -333,9 +333,9 @@ class ManifestUpdaterTest {
 
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
-        assertEquals("application/custom+xml", seeAlso.get(0).get("format").asText());
-        assertEquals("Text", seeAlso.get(0).get("type").asText());
-        assertEquals("http://example.org/profile", seeAlso.get(0).get("profile").asText());
+        assertEquals("application/custom+xml", seeAlso.get(0).get("format").asString());
+        assertEquals("Text", seeAlso.get(0).get("type").asString());
+        assertEquals("http://example.org/profile", seeAlso.get(0).get("profile").asString());
     }
 
     @Test
@@ -347,7 +347,7 @@ class ManifestUpdaterTest {
 
         JsonNode seeAlso = json.get("sequences").get(0).get("canvases").get(0).get("seeAlso");
         assertNotNull(seeAlso);
-        assertEquals("application/tei+xml", seeAlso.get(0).get("format").asText());
+        assertEquals("application/tei+xml", seeAlso.get(0).get("format").asString());
         assertNull(seeAlso.get(0).get("profile"));
     }
 }

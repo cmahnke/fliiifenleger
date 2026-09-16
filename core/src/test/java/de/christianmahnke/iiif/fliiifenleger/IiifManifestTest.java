@@ -22,17 +22,17 @@ class IiifManifestTest {
 
         JsonNode json = manifest.toJson();
 
-        assertEquals("http://iiif.io/api/presentation/2/context.json", json.get("@context").asText());
-        assertEquals("sc:Manifest", json.get("@type").asText());
-        assertEquals(BASE_URI, json.get("@id").asText());
-        assertEquals("Test Manifest", json.get("label").asText());
+        assertEquals("http://iiif.io/api/presentation/2/context.json", json.get("@context").asString());
+        assertEquals("sc:Manifest", json.get("@type").asString());
+        assertEquals(BASE_URI, json.get("@id").asString());
+        assertEquals("Test Manifest", json.get("label").asString());
         assertEquals(1, json.get("sequences").size());
-        assertEquals("sc:Sequence", json.get("sequences").get(0).get("@type").asText());
+        assertEquals("sc:Sequence", json.get("sequences").get(0).get("@type").asString());
 
         JsonNode canvases = json.get("sequences").get(0).get("canvases");
         assertEquals(2, canvases.size());
-        assertEquals("sc:Canvas", canvases.get(0).get("@type").asText());
-        assertEquals("canvas1", canvases.get(0).get("@id").asText().substring(canvases.get(0).get("@id").asText().lastIndexOf('/') + 1));
+        assertEquals("sc:Canvas", canvases.get(0).get("@type").asString());
+        assertEquals("canvas1", canvases.get(0).get("@id").asString().substring(canvases.get(0).get("@id").asString().lastIndexOf('/') + 1));
     }
 
     @Test
@@ -42,12 +42,12 @@ class IiifManifestTest {
 
         JsonNode json = manifest.toJson();
 
-        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", json.get("@context").asText());
-        assertEquals("Manifest", json.get("type").asText());
-        assertEquals(BASE_URI, json.get("id").asText());
-        assertEquals("Test Manifest V3", json.get("label").asText());
+        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", json.get("@context").asString());
+        assertEquals("Manifest", json.get("type").asString());
+        assertEquals(BASE_URI, json.get("id").asString());
+        assertEquals("Test Manifest V3", json.get("label").asString());
         assertEquals(1, json.get("items").size());
-        assertEquals("Canvas", json.get("items").get(0).get("type").asText());
+        assertEquals("Canvas", json.get("items").get(0).get("type").asString());
     }
 
     @Test
@@ -57,9 +57,9 @@ class IiifManifestTest {
 
         JsonNode json = manifest.toJson();
         JsonNode images = json.get("sequences").get(0).get("canvases").get(0).get("images");
-        assertEquals("oa:Annotation", images.get(0).get("@type").asText());
-        assertEquals("dctypes:Image", images.get(0).get("resource").get("@type").asText());
-        assertEquals(BASE_URI + "/info.json", images.get(0).get("resource").get("@id").asText());
+        assertEquals("oa:Annotation", images.get(0).get("@type").asString());
+        assertEquals("dctypes:Image", images.get(0).get("resource").get("@type").asString());
+        assertEquals(BASE_URI + "/info.json", images.get(0).get("resource").get("@id").asString());
     }
 
     @Test
@@ -69,8 +69,8 @@ class IiifManifestTest {
 
         JsonNode json = manifest.toJson();
         JsonNode canvasNode = json.get("items").get(0);
-        assertEquals("Canvas", canvasNode.get("type").asText());
-        assertEquals(BASE_URI + "/info.json", canvasNode.get("items").get(0).get("id").asText());
+        assertEquals("Canvas", canvasNode.get("type").asString());
+        assertEquals(BASE_URI + "/info.json", canvasNode.get("items").get(0).get("id").asString());
     }
 
     @Test
@@ -150,8 +150,8 @@ class IiifManifestTest {
         String result = IiifManifest.replaceBaseUriInJson(json, oldBase, newBase);
         JsonNode node = MAPPER.readTree(result);
 
-        assertEquals(newBase + "/manifest", node.get("@id").asText());
-        assertEquals(newBase + "/manifest/canvas/c1", node.get("sequences").get(0).get("canvases").get(0).get("@id").asText());
+        assertEquals(newBase + "/manifest", node.get("@id").asString());
+        assertEquals(newBase + "/manifest/canvas/c1", node.get("sequences").get(0).get("canvases").get(0).get("@id").asString());
     }
 
     @Test
@@ -171,8 +171,8 @@ class IiifManifestTest {
         String result = IiifManifest.replaceBaseUriInJson(json, oldBase, newBase);
         JsonNode node = MAPPER.readTree(result);
 
-        assertEquals(newBase + "/manifest", node.get("id").asText());
-        assertEquals(newBase + "/manifest/canvas/c1", node.get("items").get(0).get("id").asText());
+        assertEquals(newBase + "/manifest", node.get("id").asString());
+        assertEquals(newBase + "/manifest/canvas/c1", node.get("items").get(0).get("id").asString());
     }
 
     @Test
@@ -185,7 +185,7 @@ class IiifManifestTest {
 
         String result = IiifManifest.replaceBaseUriInJson(json, "http://other.example.org", "http://new.example.org");
         JsonNode node = MAPPER.readTree(result);
-        assertEquals("http://unchanged.example.org/manifest", node.get("@id").asText());
+        assertEquals("http://unchanged.example.org/manifest", node.get("@id").asString());
     }
 
     @Test

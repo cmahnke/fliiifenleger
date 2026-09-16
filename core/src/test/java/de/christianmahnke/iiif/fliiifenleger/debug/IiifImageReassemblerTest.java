@@ -135,4 +135,65 @@ class IiifImageReassemblerTest {
         assertTrue(outputPath.toFile().exists());
         assertTrue(outputPath.toFile().length() > 0);
     }
+
+    private static final String HDR_PROFILE = "https://christianmahnke.de/iiif/hdr/";
+
+    /** Stubs an info.json with the given body and loads a fresh reassembler. */
+    private IiifImageReassembler loadInfo(String infoJsonBody) throws Exception {
+        String path = "/hdr-info/info.json";
+        server.stubFor(get(urlEqualTo(path)).willReturn(aResponse()
+                .withHeader("Content-Type", "application/json")
+                .withBody(infoJsonBody)));
+        IiifImageReassembler reassembler =
+                new IiifImageReassembler(new URI(server.baseUrl() + path).toURL());
+        reassembler.load();
+        return reassembler;
+    }
+
+    @Test
+    void isHdrEndpoint_detectsV2EmbeddedSupports() throws Exception {
+        String json = "{\"@id\":\"" + server.baseUrl() + "/iiif/2/test-image\","
+                + "\"profile\":[\"http://iiif.io/api/image/2/level2.json\","
+                + "{\"supports\":[\"" + HDR_PROFILE + "\"]}]}";
+        assertTrue(loadInfo(json).isHdrEndpoint(HDR_PROFILE));
+    }
+
+    @Test
+    void isHdrEndpoint_detectsV3ExtraFeatures() throws Exception {
+        String json = "{\"id\":\"" + server.baseUrl() + "/iiif/3/test-image\","
+                + "\"extraFeatures\":[\"" + HDR_PROFILE + "\"]}";
+        assertTrue(loadInfo(json).isHdrEndpoint(HDR_PROFILE));
+    }
+
+    @Test
+    void isHdrEndpoint_detectsV3ServiceProfile() throws Exception {
+        String json = "{\"id\":\"" + server.baseUrl() + "/iiif/3/test-image\","
+                + "\"service\":[{\"id\":\"" + HDR_PROFILE + "\",\"type\":\"Service\","
+                + "\"profile\":\"" + HDR_PROFILE + "\"}]}";
+        assertTrue(loadInfo(json).isHdrEndpoint(HDR_PROFILE));
+    }
+
+    @Test
+    void isHdrEndpoint_returnsFalseWithoutMarker() throws Exception {
+        String json = "{\"id\":\"" + server.baseUrl() + "/iiif/3/test-image\","
+                + "\"profile\":\"level2\"}";
+        assertFalse(loadInfo(json).isHdrEndpoint(HDR_PROFILE));
+    }
+
+    @Test
+    void reassemble_countsFailedTiles() throws Exception {
+        // Baseline: all four tiles decode cleanly -> no failures.
+        IiifImageReassembler reassembler = new IiifImageReassembler(infoJsonUrl);
+        reassembler.load();
+        reassembler.reassemble();
+        assertEquals(0, reassembler.getFailedTileCount());
+
+        // Break one tile: ImageIO.decode returns null on an empty body,
+        // which the reassembler counts as a failure.
+        server.stubFor(get(urlEqualTo("/iiif/2/test-image/1,1,1,1/full/0/default.jpg"))
+                .willReturn(aResponse().withHeader("Content-Type", "image/jpeg")
+                        .withBody(new byte[0])));
+        reassembler.reassemble();
+        assertEquals(1, reassembler.getFailedTileCount());
+    }
 }

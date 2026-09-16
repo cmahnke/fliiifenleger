@@ -80,8 +80,8 @@ class ManifestMergerTest {
         String result = merger.mergeToJson();
         JsonNode node = new ObjectMapper().readTree(result);
 
-        assertEquals("sc:Manifest", node.get("@type").asText());
-        assertEquals(BASE_URI, node.get("@id").asText());
+        assertEquals("sc:Manifest", node.get("@type").asString());
+        assertEquals(BASE_URI, node.get("@id").asString());
         assertEquals(2, node.get("sequences").get(0).get("canvases").size());
         assertEquals(2, merger.getManifestCount());
     }
@@ -97,8 +97,8 @@ class ManifestMergerTest {
         String result = merger.mergeToJson();
         JsonNode node = new ObjectMapper().readTree(result);
 
-        assertEquals(BASE_URI, node.get("@id").asText());
-        assertTrue(node.get("sequences").get(0).get("canvases").get(0).get("@id").asText().startsWith(BASE_URI));
+        assertEquals(BASE_URI, node.get("@id").asString());
+        assertTrue(node.get("sequences").get(0).get("canvases").get(0).get("@id").asString().startsWith(BASE_URI));
         assertFalse(node.toString().contains(OLD_BASE1), "Old base URI should not appear in output");
     }
 
@@ -117,7 +117,7 @@ class ManifestMergerTest {
 
         JsonNode node = new ObjectMapper().readTree(result);
         assertEquals(2, node.get("sequences").get(0).get("canvases").size());
-        assertEquals(BASE_URI, node.get("@id").asText());
+        assertEquals(BASE_URI, node.get("@id").asString());
     }
 
     @Test
@@ -131,8 +131,8 @@ class ManifestMergerTest {
         String result = merger.mergeToJson();
         JsonNode node = new ObjectMapper().readTree(result);
 
-        assertEquals("Manifest", node.get("type").asText());
-        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", node.get("@context").asText());
+        assertEquals("Manifest", node.get("type").asString());
+        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", node.get("@context").asString());
         assertEquals(1, node.get("items").size());
     }
 
@@ -151,7 +151,7 @@ class ManifestMergerTest {
 
         JsonNode node = new ObjectMapper().readTree(result);
         assertEquals(2, node.get("sequences").get(0).get("canvases").size());
-        assertEquals(BASE_URI, node.get("@id").asText());
+        assertEquals(BASE_URI, node.get("@id").asString());
     }
 
     @Test
@@ -167,8 +167,8 @@ class ManifestMergerTest {
 
         String result = merger.mergeToJson();
         JsonNode node = new ObjectMapper().readTree(result);
-        assertTrue(node.get("label").asText().contains("Manifest 1"));
-        assertTrue(node.get("label").asText().contains("Manifest 2"));
+        assertTrue(node.get("label").asString().contains("Manifest 1"));
+        assertTrue(node.get("label").asString().contains("Manifest 2"));
     }
 
     @Test
