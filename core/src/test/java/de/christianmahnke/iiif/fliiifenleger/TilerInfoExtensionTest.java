@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
 import java.io.OutputStream;
+import java.net.URI;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +26,7 @@ class TilerInfoExtensionTest {
 
         StubSource() {
             try {
-                url = new URL("file:///tmp/page011.jpg");
+                url = URI.create("file:///tmp/page011.jpg").toURL();
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

@@ -547,6 +547,10 @@
           "parameterTypes": []
         },
         {
+          "name": "isHeadless",
+          "parameterTypes": []
+        },
+        {
           "name": "isHeadlessInstance",
           "parameterTypes": [
             "java.awt.GraphicsEnvironment"

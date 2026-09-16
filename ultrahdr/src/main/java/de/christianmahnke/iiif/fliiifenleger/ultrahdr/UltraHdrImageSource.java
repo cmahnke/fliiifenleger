@@ -205,7 +205,13 @@ public class UltraHdrImageSource implements ImageSource, HdrSource {
 
     /**
      * Feeds raw JPEG bytes to the delegate via an in-memory URL.
+     *
+     * <p>The {@code URL(URL, String, URLStreamHandler)} constructor used below
+     * is deprecated in recent JDKs, but it is the only way to attach a custom
+     * in-memory {@link URLStreamHandler}; {@link URI#toURL()} does not support
+     * custom handlers, so there is no non-deprecated equivalent.
      */
+    @SuppressWarnings("deprecation")
     private void loadDelegate(byte[] jpeg) throws ImageSourceException {
         URLStreamHandler handler = new URLStreamHandler() {
             @Override
