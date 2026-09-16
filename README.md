@@ -228,16 +228,40 @@ java -jar cli/target/fliiifenleger-cli.jar validate --output reassembled.jpg htt
 ```
 
 ### `info`
-Displays information about available components.
+Displays information about available components. Sources, sinks and
+validators are discovered via `ServiceLoader` (`@AutoService`), so every
+module on the classpath appears automatically.
 
 **Usage:** `java -jar cli/target/fliiifenleger-cli.jar info <subcommand>`
 
-*   `list-sources`: Lists all available image source implementations.
-*   `list-sinks`: Lists all available image sink implementations.
+*   `list-sources [-v]`: Lists all available image source implementations.
+*   `list-sinks [-v]`: Lists all available image sink implementations.
+*   `list-validators [-v]`: Lists all available `info.json` validators.
+*   `describe-source <name>`: Shows the description and available options of one image source (set via `--source-opt key=value`).
+*   `describe-sink <name>`: Shows the description and available options of one image sink (set via `--sink-opt key=value`).
+*   `describe-validator <name>`: Shows the description and available options of one validator.
+
+With `-v`/`--verbose`, the list commands also print each entry's
+description and options. Every option is described by `name` and
+`description`, plus its `default` value, `required` flag and `type` hint
+(e.g. `string`, `int`, `uri`, `path`).
+
+**Examples:**
+```sh
+java -jar cli/target/fliiifenleger-cli.jar info list-sources
+java -jar cli/target/fliiifenleger-cli.jar info describe-source stacked
+java -jar cli/target/fliiifenleger-cli.jar info describe-sink c2pa
+```
+
+### `runtime`
+Shows the used WASM runtime and JXL backend: JVM version, whether this is
+a GraalVM native image, Chicory/GraalWasm availability, the effective
+`-Dwasm.engine`/`-Dwasm.lanes` selection, the `imageio-jxl` reader and the
+`jxl-wasm` module presence, and which `jxl` source is registered.
 
 **Example:**
 ```sh
-java -jar cli/target/fliiifenleger-cli.jar info list-sources
+java -jar cli/target/fliiifenleger-cli.jar runtime
 ```
 
 ### `info.json` validation
@@ -615,10 +639,12 @@ GitHub Actions workflows publish the Maven artifacts to GitHub Packages:
   [`homebrew-releaser`](https://github.com/marketplace/actions/homebrew-releaser).
 * `maven-site.yml` — publishes the generated Maven site (this documentation)
   to GitHub Pages on every push to `main`.
-* `docker.yml` — builds `Dockerfile` and publishes
+* `docker.yml` — builds `Dockerfile` (JVM) and `Dockerfile.native`
+  (GraalVM native binary, see below) and publishes
   `ghcr.io/cmahnke/fliiifenleger/cli`: on a `v*` tag as `X.Y.Z`, `X.Y` and
-  `latest` (with the release version baked into the CLI jar), on `main` as
-  `snapshot`; pull requests only validate the build without pushing.
+  `latest` (with the release version baked into the CLI jar; native images
+  carry a `-native` suffix), on `main` as `snapshot` / `snapshot-native`;
+  pull requests only validate the build without pushing.
   (`Dockerfile.ubuntu` is local-only, built by no workflow.)
 
 ### Changing the project version
@@ -674,6 +700,22 @@ Chicory is excluded from the image entirely.
 CI builds Linux `amd64`/`arm64` binaries on every `v*` tag (see above);
 macOS is served by the JVM artifacts (Homebrew formula), which work on
 both Apple Silicon and Intel Macs.
+
+### Native Docker image
+
+`Dockerfile.native` ships the GraalVM native binary instead of the JVM
+(see `docker.yml`, tags with a `-native` suffix):
+
+```sh
+docker build -f Dockerfile.native -t fliiifenleger:native .
+docker run --rm fliiifenleger:native --version
+docker run --rm fliiifenleger:native runtime
+```
+
+Like the local `-Pnative` build it needs no JDK and no system `libjxl`
+at runtime (JXL decodes via the bundled `jxl-wasm` module, WASM runs on
+GraalWasm). The regular `Dockerfile` stays JVM-based and remains the
+default.
 
 ## License
 

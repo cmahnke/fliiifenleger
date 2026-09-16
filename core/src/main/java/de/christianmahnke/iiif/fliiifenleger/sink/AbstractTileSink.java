@@ -33,7 +33,7 @@ public abstract class AbstractTileSink implements TileSink {
         return List.of(
                 OptionDescriptor.optional("format",
                         "Tile image format written by this sink (e.g. jpg, png).",
-                        "jpg"));
+                        "jpg", "string"));
     }
 
     public void saveTile(OutputStream outputStream, BufferedImage image) throws TileSinkException {

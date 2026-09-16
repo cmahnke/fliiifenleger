@@ -1,0 +1,89 @@
+# Native-image variant of Dockerfile: ships the GraalVM native binary
+# instead of the JVM jar.
+#
+# Differences from the JVM Dockerfile (which stays the default):
+# - the Maven stage runs on a GraalVM JDK with -Pnative (the enforcer
+#   fails fast on stock JDKs), producing cli/target/fliiifenleger;
+# - the jxl-wasm Rust crate is built as well: the native image decodes
+#   JXL through the bundled jxl-wasm module, so no system libjxl is
+#   installed anywhere;
+# - Chicory is excluded from the image (GraalWasm is the engine);
+# - the final stage is a slim glibc base with just the binary (no JDK).
+#
+# Build: docker build -f Dockerfile.native -t fliiifenleger:native .
+# Run:   docker run --rm fliiifenleger:native --version
+#        docker run --rm fliiifenleger:native runtime
+
+# Stage 1: compile the Rust crates to wasm32-wasip1.
+# Same rationale as Dockerfile: the official rust image is used because
+# the Alpine `rust` package tracks an older toolchain and only ships a
+# wasm32-unknown-unknown stdlib. Toolchain, registry and cache stay in
+# this stage's layers.
+FROM rust:1-alpine AS rust-builder
+
+RUN apk add --no-cache musl-dev
+
+COPY jc2pa/src/main/rust /rust-jc2pa
+COPY ultrahdr/src/main/rust /rust-ultrahdr
+COPY jxl-wasm/src/main/rust /rust-jxl
+WORKDIR /rust-jc2pa
+
+RUN rustup target add wasm32-wasip1 && \
+    cargo build --target wasm32-wasip1 --release && \
+    cd /rust-ultrahdr && \
+    cargo build --target wasm32-wasip1 --release && \
+    cd /rust-jxl && \
+    cargo build --target wasm32-wasip1 --release
+
+# Stage 2: build the GraalVM native binary with Maven.
+# Must stay on GraalVM 25.3.x: the polyglot artifacts pin 25.3.x (see
+# the graalvm.version property in the parent and wasm-runtime poms) and
+# builder/library skew fails the image build.
+FROM ghcr.io/graalvm/native-image-community:25 AS native-builder
+
+# Install a pinned Maven (the image ships no build tools).
+ARG MAVEN_VERSION=3.9.11
+RUN curl -fsSL "https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" -o /tmp/maven.tar.gz && \
+    tar xzf /tmp/maven.tar.gz -C /opt && \
+    ln -s "/opt/apache-maven-${MAVEN_VERSION}/bin/mvn" /usr/local/bin/mvn && \
+    rm /tmp/maven.tar.gz
+
+WORKDIR /app
+
+COPY pom.xml .
+COPY core ./core
+COPY cli ./cli
+COPY jc2pa ./jc2pa
+COPY ultrahdr ./ultrahdr
+COPY wasm-runtime ./wasm-runtime
+COPY jxl-wasm ./jxl-wasm
+
+# Use the prebuilt WASM artifacts (skip-rust path) instead of invoking
+# cargo inside the Maven build. NB: no `clean` goal below — `mvn clean`
+# would delete these copies before the build runs.
+COPY --from=rust-builder /rust-jc2pa/target/wasm32-wasip1/release/c2pa_wasm.wasm \
+     jc2pa/src/main/resources/wasm/c2pa_wasm.wasm
+COPY --from=rust-builder /rust-ultrahdr/target/wasm32-wasip1/release/ultrahdr_wasm.wasm \
+     ultrahdr/src/main/resources/wasm/ultrahdr_wasm.wasm
+COPY --from=rust-builder /rust-jxl/target/wasm32-wasip1/release/jxl_wasm.wasm \
+     jxl-wasm/src/main/resources/wasm/jxl_wasm.wasm
+
+# -Pnative adds the jxl-wasm module, swaps imageio-jxl/Chicory for
+# polyglot+wasm-community, and runs native-image at the package phase.
+RUN mvn --batch-mode -Pnative package \
+        -Dmaven.cargo.skip=true -Dmaven.rustup.skip=true
+
+# Stage 3: minimal runtime — the self-contained binary plus glibc.
+# No JDK, no libjxl (JXL decodes via the bundled jxl-wasm module).
+FROM debian:bookworm-slim
+
+LABEL maintainer="cmahnke@gmail.com"
+LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"
+
+WORKDIR /app
+
+COPY --from=native-builder /app/cli/target/fliiifenleger .
+
+ENTRYPOINT ["/app/fliiifenleger"]
+
+CMD ["--help"]

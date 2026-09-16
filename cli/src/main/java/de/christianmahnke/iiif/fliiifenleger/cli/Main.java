@@ -82,11 +82,11 @@ public class Main implements Runnable {
         @Option(names = "--sink", description = "The image sink implementation to use for tiles.", defaultValue = "default")
         private String sink;
 
-        @Option(names = "--source-opt", description = "Set an option for the image source (e.g., -Dkey=value).",
+        @Option(names = "--source-opt", description = "Set an option for the image source (e.g., --source-opt key=value).",
                 mapFallbackValue = "")
         private Map<String, String> sourceOptions;
 
-        @Option(names = "--sink-opt", description = "Set an option for the image sink (e.g., -Dkey=value).")
+        @Option(names = "--sink-opt", description = "Set an option for the image sink (e.g., --sink-opt key=value).")
         private Map<String, String> sinkOptions;
 
         @Option(names = "--iiif-version", description = "Set the IIIF version. Options are V2, V3.", defaultValue = "V2")
