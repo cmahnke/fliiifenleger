@@ -8,8 +8,7 @@ import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
-import de.christianmahnke.iiif.fliiifenleger.Tiler;
-import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
+import de.christianmahnke.iiif.fliiifenleger.sink.AbstractDelegatingTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
@@ -77,7 +76,7 @@ import java.util.Map;
  * C2PA sinks (or other {@code C2paWasm} users) in the same JVM.
  */
 @AutoService(TileSink.class)
-public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
+public class C2paTileSink extends AbstractDelegatingTileSink implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(C2paTileSink.class);
 
@@ -88,8 +87,6 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     /** JSON-LD context for the C2PA extension (V3 only, prepended to {@code @context}). */
     public static final String C2PA_CONTEXT_URI = "https://christianmahnke.de/iiif/c2pa/context.json";
 
-    private String delegateName   = "default";
-    private String engine         = null;   // null → WasmEngine auto selection
     private Path   certPath       = null;
     private Path   keyPath        = null;
     private String alg            = "es256";
@@ -97,7 +94,6 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     private String certName       = "fliiifenleger";
     private String claimGenerator = DEFAULT_CLAIM_GENERATOR;
     private String trustAnchor     = null;
-    private int    threads         = 0;   // 0 → fall back to -Dwasm.lanes (one lane per core by default)
 
     /** Lazily created signer; one per sink instance. */
     private TileSigner signer;
@@ -105,25 +101,14 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     /** Whether this sink created (and must close) the signer. */
     private boolean ownsSigner = true;
 
-    /** Delegate sink; resolved lazily so tests can inject one. */
-    private TileSink delegate;
-
-    /** Whether this sink created (and must close) the delegate. */
-    private boolean ownsDelegate = false;
-
     // ── Configuration ─────────────────────────────────────────────────────────
 
     @Override
     public void setOptions(Map<String, String> options) {
         super.setOptions(options);
+        parseDelegateOptions(options, "C2paTileSink");
         if (options == null) {
             return;
-        }
-        if (options.containsKey("delegate")) {
-            this.delegateName = options.get("delegate");
-        }
-        if (options.containsKey("runtime")) {
-            this.engine = options.get("runtime");
         }
         if (options.containsKey("cert")) {
             this.certPath = Path.of(options.get("cert"));
@@ -142,20 +127,6 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
         }
         if (options.containsKey("claim-generator")) {
             this.claimGenerator = options.get("claim-generator");
-        }
-        if (options.containsKey("threads")) {
-            try {
-                int threads = Integer.parseInt(options.get("threads").trim());
-                if (threads < 1) {
-                    throw new IllegalArgumentException(
-                        "C2paTileSink option 'threads' must be at least 1, got '" + options.get("threads") + "'");
-                }
-                this.threads = threads;
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(
-                    "C2paTileSink option 'threads' must be a positive integer, got '"
-                    + options.get("threads") + "'", e);
-            }
         }
         if (options.containsKey("trust-anchor")) {
             String value = options.get("trust-anchor");
@@ -275,36 +246,6 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
         return own.mergedWith(delegateExtension(version));
     }
 
-    /**
-     * Returns the delegate sink's extension so stacked sinks (e.g. C2PA over
-     * UltraHDR) advertise both capabilities. Empty when the delegate is the
-     * plain default sink.
-     */
-    private InfoExtension delegateExtension(ImageInfo.IIIFVersion version) {
-        try {
-            if (delegate != null) {
-                if (delegate.getName().equals(getName())) {
-                    return InfoExtension.empty();
-                }
-                return delegate.getInfoJsonExtension(version);
-            }
-            if (delegateName == null || delegateName.equals("default") || delegateName.equals(getName())) {
-                return InfoExtension.empty();
-            }
-            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-            if (template == null) {
-                return InfoExtension.empty();
-            }
-            TileSink instance = template.getClass().getConstructor().newInstance();
-            return instance.getInfoJsonExtension(version);
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            log.debug("Cannot resolve delegate info.json extension: {}", e.getMessage());
-            return InfoExtension.empty();
-        }
-    }
-
     /** Default constructor (used by ServiceLoader / reflective instantiation). */
     public C2paTileSink() {
     }
@@ -355,35 +296,6 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    private TileSink delegate() {
-        if (delegate == null) {
-            synchronized (this) {
-                if (delegate == null) {
-                    delegate = createDelegate();
-                }
-            }
-        }
-        return delegate;
-    }
-
-    private TileSink createDelegate() {
-        TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-        if (template == null) {
-            throw new IllegalArgumentException(
-                "Unknown delegate sink: '" + delegateName + "'");
-        }
-        try {
-            TileSink created = template.getClass().getConstructor().newInstance();
-            // Propagate the format option to the delegate.
-            created.setOptions(Map.of("format", format));
-            ownsDelegate = true;
-            return created;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                "Cannot instantiate delegate sink '" + delegateName + "'", e);
-        }
-    }
-
     private TileSigner signer() throws TileSinkException {
         if (signer == null) {
             synchronized (this) {
@@ -423,13 +335,7 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
             signer.close();
         }
         signer = null;
-        if (delegate instanceof AutoCloseable closeable && ownsDelegate) {
-            try {
-                closeable.close();
-            } catch (Exception e) {
-                log.debug("Failed to close delegate sink: {}", e.getMessage());
-            }
-        }
+        closeDelegate();
     }
 
     private byte[] certPem() throws TileSinkException {

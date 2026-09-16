@@ -4,14 +4,10 @@
 // src/main/java/de/christianmahnke/jc2pa/C2paWasm.java
 package de.christianmahnke.jc2pa;
 
-import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmModule;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Low-level binding to the {@code c2pa_wasm} WASM module.
@@ -39,15 +35,10 @@ import java.nio.file.Path;
  * <p>Use {@link WasmMemory} to read and write the raw bytes behind any
  * pointer that is returned or passed in.
  *
- * <p>This class is {@link Closeable}; always call {@link #close()} (or use
+ * <p>This class is {@link java.io.Closeable}; always call {@link #close()} (or use
  * try-with-resources) to release the Chicory instance.
  */
-public class C2paWasm implements Closeable {
-
-    /** The WASM runtime engine executing the module. */
-    private final WasmEngine engine;
-
-    private final WasmMemory   memory;
+public class C2paWasm extends WasmModule {
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -57,8 +48,8 @@ public class C2paWasm implements Closeable {
      * @param wasmPath Path to {@code c2pa_wasm.wasm}.
      * @throws IOException if the file cannot be read or the module is invalid.
      */
-    public C2paWasm(Path wasmPath) throws IOException {
-        this(Files.readAllBytes(wasmPath));
+    public C2paWasm(java.nio.file.Path wasmPath) throws IOException {
+        super(wasmPath);
     }
 
     /**
@@ -69,12 +60,12 @@ public class C2paWasm implements Closeable {
      * @throws IOException if the module is invalid.
      */
     public C2paWasm(byte[] wasmBytes) throws IOException {
-        this(wasmBytes, null);
+        super(wasmBytes);
     }
 
     /**
      * Load the WASM module from a raw byte array, using the engine selected
-     * by {@code engineSelection} (see {@link WasmEngine#create}).
+     * by {@code engineSelection} (see {@link de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine#create}).
      *
      * @param wasmBytes       Raw WASM binary bytes.
      * @param engineSelection {@code auto}, {@code chicory}, {@code graalvm},
@@ -82,10 +73,8 @@ public class C2paWasm implements Closeable {
      *                        system property / {@code auto}.
      * @throws IOException if the module cannot be loaded by any engine.
      */
-    @SuppressWarnings("this-escape") // WasmMemory only stores the reference
     public C2paWasm(byte[] wasmBytes, String engineSelection) throws IOException {
-        this.engine = WasmEngine.create(engineSelection, wasmBytes);
-        this.memory = new WasmMemory(engine);
+        super(wasmBytes, engineSelection);
     }
 
     /**
@@ -111,15 +100,7 @@ public class C2paWasm implements Closeable {
      * @throws IOException if the resource is not found or cannot be read.
      */
     public static byte[] fromClasspathBytes() throws IOException {
-        for (String path : new String[]{"/c2pa_wasm.wasm", "/wasm/c2pa_wasm.wasm"}) {
-            try (InputStream is = C2paWasm.class.getResourceAsStream(path)) {
-                if (is != null) {
-                    return is.readAllBytes();
-                }
-            }
-        }
-        throw new IOException(
-            "WASM resource not found on classpath: /c2pa_wasm.wasm");
+        return fromClasspathBytes("c2pa_wasm.wasm");
     }
 
     // ── Private construction helpers ──────────────────────────────────────────
@@ -137,7 +118,7 @@ public class C2paWasm implements Closeable {
     }
 
     /**
-     * Returns the engine name (see {@link WasmEngine#name}); used for lane
+     * Returns the engine name (see {@link de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine#name}); used for lane
      * sizing, since some engines cap useful parallelism.
      */
     String engineName() {
@@ -145,32 +126,6 @@ public class C2paWasm implements Closeable {
     }
 
     // ── Memory management exports ─────────────────────────────────────────────
-
-    /**
-     * {@code wasm_alloc(size: u32) -> *mut u8}
-     *
-     * <p>Allocate {@code size} zeroed bytes in WASM linear memory.
-     * The caller MUST eventually free the result with {@link #wasmFree}.
-     *
-     * @param size Number of bytes to allocate (must be &gt; 0).
-     * @return WASM linear memory address of the allocated buffer.
-     */
-    public int wasmAlloc(int size) {
-        return engine.alloc(size);
-    }
-
-    /**
-     * {@code wasm_free(ptr: *mut u8, size: u32)}
-     *
-     * <p>Free memory previously allocated by {@link #wasmAlloc} or returned
-     * as an output buffer by any function in this module.
-     *
-     * @param ptr  WASM linear memory address to free (ignored if 0).
-     * @param size Number of bytes that were allocated (ignored if 0).
-     */
-    public void wasmFree(int ptr, int size) {
-        engine.free(ptr, size);
-    }
 
     /**
      * {@code trust_anchors_set(pem_ptr, pem_len, err_ptr, err_len) -> u32}
@@ -455,12 +410,5 @@ public class C2paWasm implements Closeable {
      */
     public int c2paVersion(int outLenSlot) {
         return call("c2pa_version", outLenSlot);
-    }
-
-    // ── Closeable ─────────────────────────────────────────────────────────────
-
-    @Override
-    public void close() {
-        engine.close();
     }
 }

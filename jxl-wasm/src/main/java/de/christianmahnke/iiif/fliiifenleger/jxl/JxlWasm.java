@@ -6,12 +6,9 @@ package de.christianmahnke.iiif.fliiifenleger.jxl;
 
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmModule;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Low-level binding to the {@code jxl_wasm} WASM module.
@@ -27,15 +24,10 @@ import java.nio.file.Path;
  * host threads — share instances only through {@link JxlDecoder}'s lane
  * pool, never directly.
  *
- * <p>This class is {@link Closeable}; always call {@link #close()} (or use
+ * <p>This class is {@link java.io.Closeable}; always call {@link #close()} (or use
  * try-with-resources) to release the engine.
  */
-public class JxlWasm implements Closeable {
-
-    /** The WASM runtime engine executing the module. */
-    private final WasmEngine engine;
-
-    private final WasmMemory memory;
+public class JxlWasm extends WasmModule {
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -45,8 +37,8 @@ public class JxlWasm implements Closeable {
      * @param wasmPath Path to {@code jxl_wasm.wasm}.
      * @throws IOException if the file cannot be read or the module is invalid.
      */
-    public JxlWasm(Path wasmPath) throws IOException {
-        this(Files.readAllBytes(wasmPath), null);
+    public JxlWasm(java.nio.file.Path wasmPath) throws IOException {
+        super(wasmPath);
     }
 
     /**
@@ -57,7 +49,7 @@ public class JxlWasm implements Closeable {
      * @throws IOException if the module cannot be loaded by any engine.
      */
     public JxlWasm(byte[] wasmBytes) throws IOException {
-        this(wasmBytes, null);
+        super(wasmBytes);
     }
 
     /**
@@ -71,8 +63,7 @@ public class JxlWasm implements Closeable {
      * @throws IOException if the module cannot be loaded by any engine.
      */
     public JxlWasm(byte[] wasmBytes, String engineSelection) throws IOException {
-        this.engine = WasmEngine.create(engineSelection, wasmBytes);
-        this.memory = new WasmMemory(engine);
+        super(wasmBytes, engineSelection);
     }
 
     /**
@@ -95,15 +86,7 @@ public class JxlWasm implements Closeable {
      * @throws IOException if the resource is not found or cannot be read.
      */
     public static byte[] fromClasspathBytes() throws IOException {
-        for (String path : new String[]{"/jxl_wasm.wasm", "/wasm/jxl_wasm.wasm"}) {
-            try (InputStream is = JxlWasm.class.getResourceAsStream(path)) {
-                if (is != null) {
-                    return is.readAllBytes();
-                }
-            }
-        }
-        throw new IOException(
-            "WASM resource not found on classpath: /jxl_wasm.wasm");
+        return fromClasspathBytes("jxl_wasm.wasm");
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -185,12 +168,5 @@ public class JxlWasm implements Closeable {
      */
     public int jxlVersion(int outLenSlot) {
         return call("jxl_version", outLenSlot);
-    }
-
-    // ── Closeable ─────────────────────────────────────────────────────────────
-
-    @Override
-    public void close() {
-        engine.close();
     }
 }

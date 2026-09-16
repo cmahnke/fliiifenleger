@@ -7,8 +7,7 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
-import de.christianmahnke.iiif.fliiifenleger.Tiler;
-import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
+import de.christianmahnke.iiif.fliiifenleger.sink.AbstractDelegatingTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSinkException;
 import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
@@ -64,7 +63,7 @@ import java.util.Map;
  * per available processor capped at 4 by default, serial with {@code threads=1}).
  */
 @AutoService(TileSink.class)
-public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable {
+public class UltraHdrTileSink extends AbstractDelegatingTileSink implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(UltraHdrTileSink.class);
 
@@ -73,20 +72,11 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     /** JSON-LD context for the HDR extension (V3 only). */
     public static final String HDR_CONTEXT_URI = "https://christianmahnke.de/iiif/hdr/context.json";
 
-    private String delegateName    = "default";
-    private String engine          = null;  // null → WasmEngine auto selection
-    private int    quality         = 90;
-    private int    gainmapQuality  = 85;
-    private int    threads         = 0;   // 0 → fall back to -Dwasm.lanes (one lane per core by default)
+    private int quality         = 90;
+    private int gainmapQuality  = 85;
 
     /** Lazily created codec; one per sink instance. */
     private GainMapCodec codec;
-
-    /** Delegate sink; resolved lazily so tests can inject one. */
-    private TileSink delegate;
-
-    /** Whether this sink created (and must close) the delegate. */
-    private boolean ownsDelegate = false;
 
     /** Whether this sink created (and must close) the codec. */
     private boolean ownsCodec = true;
@@ -113,34 +103,15 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     @Override
     public void setOptions(Map<String, String> options) {
         super.setOptions(options);
+        parseDelegateOptions(options, "UltraHdrTileSink");
         if (options == null) {
             return;
-        }
-        if (options.containsKey("delegate")) {
-            this.delegateName = options.get("delegate");
-        }
-        if (options.containsKey("runtime")) {
-            this.engine = options.get("runtime");
         }
         if (options.containsKey("quality")) {
             this.quality = Integer.parseInt(options.get("quality"));
         }
         if (options.containsKey("gainmap-quality")) {
             this.gainmapQuality = Integer.parseInt(options.get("gainmap-quality"));
-        }
-        if (options.containsKey("threads")) {
-            try {
-                int threads = Integer.parseInt(options.get("threads").trim());
-                if (threads < 1) {
-                    throw new IllegalArgumentException(
-                        "UltraHdrTileSink option 'threads' must be at least 1, got '" + options.get("threads") + "'");
-                }
-                this.threads = threads;
-            } catch (NumberFormatException e) {
-                throw new IllegalArgumentException(
-                    "UltraHdrTileSink option 'threads' must be a positive integer, got '"
-                    + options.get("threads") + "'", e);
-            }
         }
     }
 
@@ -222,29 +193,6 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
         return own.mergedWith(delegateExtension(version));
     }
 
-    private InfoExtension delegateExtension(ImageInfo.IIIFVersion version) {
-        try {
-            if (delegate != null) {
-                if (delegate.getName().equals(getName())) {
-                    return InfoExtension.empty();
-                }
-                return delegate.getInfoJsonExtension(version);
-            }
-            if (delegateName == null || delegateName.equals("default") || delegateName.equals(getName())) {
-                return InfoExtension.empty();
-            }
-            TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-            if (template == null) {
-                return InfoExtension.empty();
-            }
-            TileSink instance = template.getClass().getConstructor().newInstance();
-            return instance.getInfoJsonExtension(version);
-        } catch (Exception e) {
-            log.debug("Cannot resolve delegate info.json extension: {}", e.getMessage());
-            return InfoExtension.empty();
-        }
-    }
-
     // ── TileSink ──────────────────────────────────────────────────────────────
 
     @Override
@@ -309,8 +257,8 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
      * Crops the frame's gain map to the tile region.
      *
      * <p>The region comes from the {@code iiif.region.*} keys the core
-     * {@code RegionTileEnricher} records for every tile (source-image
-     * pixels plus scale factor); mapping through the per-axis
+     * {@code Tiler} records for every tile (source-image pixels plus scale
+     * factor); mapping through the per-axis
      * {@code primary / gainmap} ratio accounts for subsampled (and
      * possibly non-uniformly subsampled) gain maps, rounding outwards so
      * the crop always fully covers the tile — ISO 21496-1 readers scale
@@ -349,7 +297,7 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
 
     /**
      * Reads the tile region (source-image pixels + scale) recorded by the
-     * core region enricher; falls back to the full frame when absent
+     * core {@code Tiler}; falls back to the full frame when absent
      * (e.g. direct API use without the {@code Tiler}).
      */
     private static int[] regionMeta(Map<String, Object> metadata, int fullW, int fullH) {
@@ -377,45 +325,10 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
             codec.close();
         }
         codec = null;
-        if (delegate instanceof AutoCloseable closeable && ownsDelegate) {
-            try {
-                closeable.close();
-            } catch (Exception e) {
-                log.debug("Failed to close delegate sink: {}", e.getMessage());
-            }
-        }
+        closeDelegate();
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
-
-    private TileSink delegate() {
-        if (delegate == null) {
-            synchronized (this) {
-                if (delegate == null) {
-                    delegate = createDelegate();
-                }
-            }
-        }
-        return delegate;
-    }
-
-    private TileSink createDelegate() {
-        TileSink template = Tiler.SINK_REGISTRY.get(delegateName);
-        if (template == null) {
-            throw new IllegalArgumentException(
-                "Unknown delegate sink: '" + delegateName + "'");
-        }
-        try {
-            TileSink created = template.getClass().getConstructor().newInstance();
-            // Propagate the format option to the delegate.
-            created.setOptions(Map.of("format", format));
-            ownsDelegate = true;
-            return created;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(
-                "Cannot instantiate delegate sink '" + delegateName + "'", e);
-        }
-    }
 
     private GainMapCodec codec() throws TileSinkException {
         if (codec == null) {

@@ -5,7 +5,6 @@ package de.christianmahnke.iiif.fliiifenleger;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.JsonNode;
-import de.christianmahnke.iiif.fliiifenleger.sink.TileEnricher;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
 import de.christianmahnke.iiif.fliiifenleger.source.HdrFrame;
 import de.christianmahnke.iiif.fliiifenleger.source.HdrSource;
@@ -32,13 +31,6 @@ public class Tiler {
 
     public static final Map<String, ImageSource> SOURCE_REGISTRY = loadSources();
     public static final Map<String, TileSink> SINK_REGISTRY = loadSinks();
-
-    /**
-     * Per-tile metadata contributors, discovered via {@link ServiceLoader}.
-     * Core ships {@link de.christianmahnke.iiif.fliiifenleger.sink.RegionTileEnricher}.
-     * Enrichers must be stateless: tiles are generated concurrently.
-     */
-    protected static final List<TileEnricher> TILE_ENRICHERS = loadEnrichers();
 
     protected final int defaultTileSize;
     protected final ImageInfo.IIIFVersion defaultIiifVersion;
@@ -69,18 +61,6 @@ public class Tiler {
             sinks.put(sink.getName(), sink);
         });
         return sinks;
-    }
-
-    protected static List<TileEnricher> loadEnrichers() {
-        List<TileEnricher> enrichers = new java.util.ArrayList<>();
-        ServiceLoader.load(TileEnricher.class).forEach(enrichers::add);
-        if (enrichers.isEmpty()) {
-            log.debug("No TileEnricher implementations found; tiles carry only source metadata.");
-        } else {
-            log.debug("Loaded TileEnricher implementations: {}",
-                    enrichers.stream().map(enricher -> enricher.getClass().getName()).toList());
-        }
-        return java.util.Collections.unmodifiableList(enrichers);
     }
 
     /**
@@ -407,9 +387,9 @@ public class Tiler {
                     log.debug("Writing tile to {}", outputPath);
                     try (OutputStream os = Files.newOutputStream(outputPath)) {
                         // Full-image region in source pixels plus the real
-                        // downscale factor: enrichers (and HDR sinks cropping
-                        // through iiif.region keys) work in source
-                        // coordinates, not rendition pixels.
+                        // downscale factor: the region keys (and HDR sinks
+                        // cropping through them) work in source coordinates,
+                        // not rendition pixels.
                         double sizeScale = (double) imageInfo.getImage().getWidth() / size.width();
                         int sizeScaleInt = Math.max(1, (int) Math.round(sizeScale));
                         Map<String, Object> meta = enrichMetadata(imageInfo, 0, 0,
@@ -486,8 +466,9 @@ public class Tiler {
     }
 
     /**
-     * Builds the per-tile metadata map: a copy of the source metadata enriched
-     * by every {@link TileEnricher} (tile region, …).
+     * Builds the per-tile metadata map: a copy of the source metadata with the
+     * tile's region recorded in source-image coordinates ({@code iiif.region.*}
+     * keys, used by the C2PA and UltraHDR sinks).
      *
      * @param imageInfo The image info (source and primary dimensions).
      * @param x         Tile region X in source-image pixels.
@@ -495,16 +476,18 @@ public class Tiler {
      * @param w         Tile region width in source-image pixels.
      * @param h         Tile region height in source-image pixels.
      * @param scale    Scale factor (1 = full resolution).
-     * @return A new map with all enricher contributions applied.
+     * @return A new map with the region keys applied.
      */
     protected static Map<String, Object> enrichMetadata(ImageInfo imageInfo, int x, int y, int w, int h, int scale) {
         Map<String, Object> sourceMetadata = imageInfo.getImage().getMetadata();
         Map<String, Object> result = (sourceMetadata == null)
                 ? new java.util.HashMap<>()
                 : new java.util.HashMap<>(sourceMetadata);
-        for (TileEnricher enricher : TILE_ENRICHERS) {
-            enricher.enrich(imageInfo.getImage(), x, y, w, h, scale, result);
-        }
+        result.put("iiif.region.x", x);
+        result.put("iiif.region.y", y);
+        result.put("iiif.region.w", w);
+        result.put("iiif.region.h", h);
+        result.put("iiif.region.scale", scale);
         return result;
     }
 

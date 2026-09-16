@@ -6,12 +6,9 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmMemory;
+import de.christianmahnke.iiif.fliiifenleger.wasm.WasmModule;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Low-level binding to the {@code ultrahdr_wasm} WASM module.
@@ -24,15 +21,10 @@ import java.nio.file.Path;
  * ONE {@code UltraHdrWasm} instance should be alive per JVM, and concurrent
  * use must be routed through a single thread (see {@link GainMapCodec}).
  *
- * <p>This class is {@link Closeable}; always call {@link #close()} (or use
+ * <p>This class is {@link java.io.Closeable}; always call {@link #close()} (or use
  * try-with-resources) to release the engine.
  */
-public class UltraHdrWasm implements Closeable {
-
-    /** The WASM runtime engine executing the module. */
-    private final WasmEngine engine;
-
-    private final WasmMemory memory;
+public class UltraHdrWasm extends WasmModule {
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -42,8 +34,8 @@ public class UltraHdrWasm implements Closeable {
      * @param wasmPath Path to {@code ultrahdr_wasm.wasm}.
      * @throws IOException if the file cannot be read or the module is invalid.
      */
-    public UltraHdrWasm(Path wasmPath) throws IOException {
-        this(Files.readAllBytes(wasmPath), null);
+    public UltraHdrWasm(java.nio.file.Path wasmPath) throws IOException {
+        super(wasmPath);
     }
 
     /**
@@ -54,7 +46,7 @@ public class UltraHdrWasm implements Closeable {
      * @throws IOException if the module cannot be loaded by any engine.
      */
     public UltraHdrWasm(byte[] wasmBytes) throws IOException {
-        this(wasmBytes, null);
+        super(wasmBytes);
     }
 
     /**
@@ -68,8 +60,7 @@ public class UltraHdrWasm implements Closeable {
      * @throws IOException if the module cannot be loaded by any engine.
      */
     public UltraHdrWasm(byte[] wasmBytes, String engineSelection) throws IOException {
-        this.engine = WasmEngine.create(engineSelection, wasmBytes);
-        this.memory = new WasmMemory(engine);
+        super(wasmBytes, engineSelection);
     }
 
     /**
@@ -92,15 +83,7 @@ public class UltraHdrWasm implements Closeable {
      * @throws IOException if the resource is not found or cannot be read.
      */
     public static byte[] fromClasspathBytes() throws IOException {
-        for (String path : new String[]{"/ultrahdr_wasm.wasm", "/wasm/ultrahdr_wasm.wasm"}) {
-            try (InputStream is = UltraHdrWasm.class.getResourceAsStream(path)) {
-                if (is != null) {
-                    return is.readAllBytes();
-                }
-            }
-        }
-        throw new IOException(
-            "WASM resource not found on classpath: /ultrahdr_wasm.wasm");
+        return fromClasspathBytes("ultrahdr_wasm.wasm");
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -200,12 +183,5 @@ public class UltraHdrWasm implements Closeable {
                     metadataPtr, metadataLen,
                     baseQuality, gainmapQuality,
                     outLenSlot, errPtr, errLen);
-    }
-
-    // ── Closeable ─────────────────────────────────────────────────────────────
-
-    @Override
-    public void close() {
-        engine.close();
     }
 }

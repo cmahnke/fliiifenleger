@@ -53,7 +53,6 @@ The project is a multi-module Maven project (`core`, `wasm-runtime`,
 1.  **Core Module (`core`)**: This module contains the main business logic for IIIF processing.
     *   `ImageSource`: An interface for reading different source image formats (e.g., `DefaultImageSource`, `JxlImageSource`).
     *   `TileSink`: An interface for writing image tiles to different destinations (e.g., `DefaultTileSink` for the local filesystem).
-    *   `TileEnricher`: A pluggable per-tile metadata hook (e.g., `RegionTileEnricher` records the tile region, which HDR sinks use to crop gain maps).
     *   `ServiceExtension`: A pluggable `info.json` service description (profile/context URIs plus a schema fragment) so schema composition stays extension-agnostic; implemented by the `jc2pa` (C2PA) and `ultrahdr` (HDR) modules.
     *   `Validator`: A pluggable `info.json` semantic check (like `ImageSource` / `TileSink`, discovered via `ServiceLoader`); core ships the generic IIIF rules (`core-context`, `core-v2`), the `jc2pa` (`c2pa`) and `ultrahdr` (`hdr`) modules own their service semantics. The `InfoJsonValidator` facade composes JSON Schema validation with every discovered validator.
     *   `Tiler`: The central class that orchestrates the process of reading a source image, calculating tile layouts, and writing the tiles and `info.json` using a `TileSink`.
@@ -67,7 +66,7 @@ The project is a multi-module Maven project (`core`, `wasm-runtime`,
 
 3.  **Codec Modules (`jc2pa`, `ultrahdr`, `wasm-runtime`)**: The C2PA signer and the UltraHDR gain-map codec are pure-Rust libraries compiled to WebAssembly (`wasm32-wasip1`) and executed through the shared `wasm-runtime` layer (pure-JVM Chicory by default, optional GraalWasm). The compiled `.wasm` files are build artifacts, not part of the repo.
 
-The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource`, `TileSink`, `TileEnricher`, `Validator`, and `ServiceExtension` implementations at runtime.
+The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic discovery of `ImageSource`, `TileSink`, `Validator`, and `ServiceExtension` implementations at runtime. Each tile's `iiif.region.*` metadata is recorded directly by the `Tiler` for the C2PA and UltraHDR sinks.
 
 ## Prerequisites
 
