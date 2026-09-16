@@ -99,11 +99,12 @@ public abstract class WasmEngine implements Closeable {
     public static WasmEngine create(String selection, byte[] wasmBytes)
             throws IOException {
         String chosen = selection != null ? selection
-                                          : System.getProperty(ENGINE_PROPERTY, "auto");
+                                          : System.getProperty(ENGINE_PROPERTY,
+                                                               defaultSelection());
 
         switch (chosen) {
             case CHICORY:
-                return new ChicoryEngine(wasmBytes);
+                return loadChicory(wasmBytes);
             case GRAALVM:
                 return createGraalOrFallback(wasmBytes, false);
             case "auto":
@@ -116,6 +117,25 @@ public abstract class WasmEngine implements Closeable {
     }
 
     /**
+     * Default engine selection when neither an explicit selection nor the
+     * {@link #ENGINE_PROPERTY} system property is given.
+     *
+     * <p>Inside a GraalVM native image ({@code
+     * org.graalvm.nativeimage.imagecode=runtime}) this is always
+     * {@code graalvm}: the Chicory interpreter is never used there, and
+     * {@code auto} would pick it since modern GraalVMs no longer set
+     * {@code org.graalvm.version}.  Everywhere else the default stays
+     * {@code auto}.
+     */
+    private static String defaultSelection() {
+        if ("runtime".equals(
+                System.getProperty("org.graalvm.nativeimage.imagecode"))) {
+            return GRAALVM;
+        }
+        return "auto";
+    }
+
+    /**
      * Automatic selection: prefer GraalWasm only when running on a GraalVM
      * runtime with its polyglot artifacts present; otherwise (and on any
      * load failure) use Chicory.
@@ -124,7 +144,7 @@ public abstract class WasmEngine implements Closeable {
         if (prefersGraal(null)) {
             return createGraalOrFallback(wasmBytes, true);
         }
-        return new ChicoryEngine(wasmBytes);
+        return loadChicory(wasmBytes);
     }
 
     private static boolean prefersGraal(String selection) {
@@ -132,6 +152,11 @@ public abstract class WasmEngine implements Closeable {
             return true;
         }
         if (selection == null || "auto".equals(selection)) {
+            // Native images default to GraalWasm (see defaultSelection) —
+            // keep the GraalWasm lane caps in that case.
+            if (GRAALVM.equals(defaultSelection())) {
+                return true;
+            }
             return System.getProperty("org.graalvm.version") != null
                 && GraalWasmEngine.polyglotOnClasspath();
         }
@@ -207,7 +232,29 @@ public abstract class WasmEngine implements Closeable {
             }
             // Automatic switch: any other JVM — or a broken Graal setup —
             // runs on Chicory.
-            return new ChicoryEngine(wasmBytes);
+            return loadChicory(wasmBytes);
+        }
+    }
+
+    /**
+     * Instantiate the Chicory engine reflectively instead of via {@code new
+     * ChicoryEngine(...)} so static analysis cannot see the edge: native
+     * builds exclude the Chicory jars, and a direct reference would pull
+     * them back into the image (or fail the build on the missing classes).
+     * The class name is deliberately assembled at runtime so it is not a
+     * compile-time constant the analysis could fold.
+     *
+     * <p>On a regular JVM this behaves exactly like a direct instantiation
+     * (same package, same class loader).
+     */
+    private static WasmEngine loadChicory(byte[] wasmBytes) throws IOException {
+        String engineClass = WasmEngine.class.getPackageName() + ".Chicor" + "yEngine";
+        try {
+            Class<?> cls = Class.forName(engineClass);
+            var ctor = cls.getDeclaredConstructor(byte[].class);
+            return (WasmEngine) ctor.newInstance((Object) wasmBytes);
+        } catch (ReflectiveOperationException e) {
+            throw new IOException("Chicory engine is not available: " + e.getMessage(), e);
         }
     }
 

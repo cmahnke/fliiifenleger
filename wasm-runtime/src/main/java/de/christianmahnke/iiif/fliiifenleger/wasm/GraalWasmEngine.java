@@ -85,13 +85,50 @@ final class GraalWasmEngine extends WasmEngine {
      * <p>{@code Source.newBuilder} for binary languages requires a
      * {@link ByteSequence}, not a raw {@code byte[]}.  {@link
      * ByteSequence#create(byte[])} wraps the array once.
+     *
+     * <p>Since polyglot 24-ish, evaluating a WASM source yields a
+     * <em>module object</em> that must be instantiated explicitly via
+     * {@code newInstance()}; its exports live under the instance's
+     * {@code exports} member (older releases auto-instantiated and exposed
+     * them under the module name in the language bindings — kept as a
+     * fallback).
      */
     private static Value loadModule(Context ctx, byte[] bytes) throws IOException {
-        Source source = Source.newBuilder(WASM_LANG, ByteSequence.create(bytes),
-                                          MODULE_NAME)
-                              .build();
-        ctx.eval(source);
-        return ctx.getBindings(WASM_LANG).getMember(MODULE_NAME);
+        Source source;
+        try {
+            source = Source.newBuilder(WASM_LANG, ByteSequence.create(bytes),
+                                       MODULE_NAME)
+                           .build();
+        } catch (Exception e) {
+            throw new IOException(
+                "GraalWasm failed to build module source: " + e.getMessage(), e);
+        }
+        final Value evaluated;
+        try {
+            evaluated = ctx.eval(source);
+        } catch (Exception e) {
+            throw new IOException(
+                "GraalWasm failed to parse module: " + e.getMessage(), e);
+        }
+        if (evaluated.canInstantiate()) {
+            try {
+                Value exports = evaluated.newInstance().getMember("exports");
+                if (exports != null && !exports.isNull()) {
+                    return exports;
+                }
+            } catch (Exception e) {
+                throw new IOException(
+                    "GraalWasm failed to instantiate module: " + e.getMessage(), e);
+            }
+            throw new IOException("GraalWasm module instance has no exports member");
+        }
+        Value named = ctx.getBindings(WASM_LANG).getMember(MODULE_NAME);
+        if (named != null && !named.isNull()) {
+            return named;
+        }
+        throw new IOException(
+            "GraalWasm module exposes neither an instance exports member nor a '"
+            + MODULE_NAME + "' binding");
     }
 
     @Override
@@ -105,10 +142,17 @@ final class GraalWasmEngine extends WasmEngine {
         wasmBindings.getMember(name).execute(toObjects(args));
     }
 
+    /**
+     * Convert i32 arguments: WASM is 32-bit, so every value must arrive as
+     * an {@link Integer} — a boxed {@link Long} is rejected by the
+     * interpreter ("invalid argument"), and the module's linear memory is a
+     * byte array that only accepts {@link Byte} elements (see
+     * {@link #writeBytes} / {@link #writeU32}).
+     */
     private static Object[] toObjects(long... args) {
         Object[] converted = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            converted[i] = args[i];
+            converted[i] = (int) args[i];
         }
         return converted;
     }
@@ -142,18 +186,18 @@ final class GraalWasmEngine extends WasmEngine {
     public void writeBytes(int address, byte[] data) {
         Value memory = memory();
         for (int i = 0; i < data.length; i++) {
-            // Mask to unsigned so GraalVM receives values in 0–255.
-            memory.setArrayElement(address + i, data[i] & 0xFF);
+            // Box as Byte: the WASM memory array rejects Integer elements.
+            memory.setArrayElement(address + i, data[i]);
         }
     }
 
     @Override
     public void writeU32(int address, int value) {
         Value memory = memory();
-        memory.setArrayElement(address,      value         & 0xFF);
-        memory.setArrayElement(address + 1, (value >>  8)  & 0xFF);
-        memory.setArrayElement(address + 2, (value >> 16)  & 0xFF);
-        memory.setArrayElement(address + 3, (value >> 24)  & 0xFF);
+        memory.setArrayElement(address,     (byte)  value);
+        memory.setArrayElement(address + 1, (byte) (value >>  8));
+        memory.setArrayElement(address + 2, (byte) (value >> 16));
+        memory.setArrayElement(address + 3, (byte) (value >> 24));
     }
 
     private Value memory() {

@@ -6,7 +6,7 @@
     <parent>
         <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
         <artifactId>fliiifenleger-parent</artifactId>
-        <version>0.3.1</version>
+        <version>0.3.2</version>
     </parent>
 
     <artifactId>cli</artifactId>
@@ -32,7 +32,7 @@
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
-            <version>4.7.7</version>
+            <version>${picocli.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -59,6 +59,162 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!--
+            Activated together with the root `native` profile (`mvn -Pnative`):
+            swaps the JXL implementation and builds a native binary.
+        -->
+        <profile>
+            <id>native</id>
+            <dependencies>
+                <!--
+                    Drop the FFM-based NightMonkeys JXL plugin (native
+                    libraries cannot ship in the image) and use the
+                    WASM-based decoder instead.  The exclusion merges with
+                    the base `core` dependency above; exactly one "jxl"
+                    ImageSource remains registered.
+                -->
+                <dependency>
+                    <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+                    <artifactId>core</artifactId>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.github.gotson.nightmonkeys</groupId>
+                            <artifactId>imageio-jxl</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+                    <artifactId>jxl-wasm</artifactId>
+                    <version>${project.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>runtime</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>wasi</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>annotations</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <!--
+                    The Chicory interpreter is never used inside the image
+                    (the engine defaults to GraalWasm there, and WasmEngine
+                    reaches Chicory only reflectively so the analysis cannot
+                    see it).  Exclude its jars from jc2pa/ultrahdr as well —
+                    keeping them would ship megabytes of dead interpreter.
+                -->
+                <dependency>
+                    <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+                    <artifactId>jc2pa</artifactId>
+                    <version>${project.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>runtime</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>wasi</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>annotations</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <dependency>
+                    <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+                    <artifactId>ultrahdr</artifactId>
+                    <version>${project.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>runtime</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>wasi</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.dylibso.chicory</groupId>
+                            <artifactId>annotations</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+                <!--
+                    GraalWasm engine artifacts.  wasm-runtime declares these
+                    optional, so they are NOT inherited transitively and must
+                    be listed here explicitly — otherwise polyglotOnClasspath
+                    fails and no GraalWasm engine can load.  wasm-community
+                    (pom) pulls wasm-language + truffle-runtime.
+                -->
+                <dependency>
+                    <groupId>org.graalvm.polyglot</groupId>
+                    <artifactId>polyglot</artifactId>
+                    <version>${graalvm.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.graalvm.polyglot</groupId>
+                    <artifactId>wasm-community</artifactId>
+                    <version>${graalvm.version}</version>
+                    <type>pom</type>
+                </dependency>
+                <!--
+                    picocli annotation processor: generates GraalVM
+                    reflect/resource config for the CLI commands into
+                    target/classes/META-INF/native-image (picked up
+                    automatically at image build time).
+                -->
+                <dependency>
+                    <groupId>info.picocli</groupId>
+                    <artifactId>picocli-codegen</artifactId>
+                    <version>${picocli.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>0.10.6</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <imageName>fliiifenleger</imageName>
+                            <mainClass>de.christianmahnke.iiif.fliiifenleger.cli.Main</mainClass>
+                            <buildArgs>
+                                <buildArg>--no-fallback</buildArg>
+                                <!-- `validate` fetches remote info.json over HTTPS. -->
+                                <buildArg>--enable-https</buildArg>
+                                <!-- Build-time headless init; the runtime default
+                                     comes from Main.main (a -D build flag does not
+                                     propagate to runtime system properties). -->
+                                <buildArg>-Djava.awt.headless=true</buildArg>
+                                <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>

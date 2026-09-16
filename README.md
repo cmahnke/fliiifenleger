@@ -102,6 +102,7 @@ The use of `java.util.ServiceLoader` (via `@AutoService`) allows for the dynamic
     * `-Dmaven.rustup.skip=true` — also skip the rustup target check.
     * `-Dcargo.path` / `-Drustup.path` — override the cargo/rustup binaries (toolchains not on the `PATH`).
     * Maven profiles: `dev` (debug WASM build), `ci` (Rust tests and clippy), `skip-rust` (skip the Rust build, same requirement as `maven.cargo.skip`) — all in the `jc2pa` module.
+    * `-Pnative` (root pom): adds the `jxl-wasm` module (jxl-oxide decoder as WASM, reserved for the future GraalVM-native build) to the reactor — it is not built by default.
 
 ## Installation
 

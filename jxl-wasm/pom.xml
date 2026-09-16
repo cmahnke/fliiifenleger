@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
@@ -9,23 +9,25 @@
         <version>0.3.2</version>
     </parent>
 
-    <artifactId>ultrahdr</artifactId>
-    <name>Fliiifenleger :: ultrahdr</name>
+    <artifactId>jxl-wasm</artifactId>
+    <name>Fliiifenleger :: jxl-wasm</name>
     <description>
-        UltraHDR (gain map) support: the ultrahdr-rs Rust codec compiled to
+        JPEG XL decoding through jxl-oxide: the pure-Rust decoder compiled to
         WebAssembly, executed through the shared wasm-runtime layer.  Provides
-        the UltraHdrImageSource and UltraHdrTileSink for tiling with
-        integrated gainmaps.  (Skeleton — implementation in progress.)
+        the JxlDecoder API (raw 8-bit pixels plus dimensions) for a future
+        GraalVM-native build; deliberately NOT wired into any ImageSource or
+        TileSink (the NightMonkeys imageio-jxl plugin remains the default
+        JXL path on regular JVMs).
     </description>
     <packaging>jar</packaging>
 
     <properties>
-        <!-- Rust build configuration (mirrors the jc2pa module). -->
+        <!-- Rust build configuration (mirrors the jc2pa/ultrahdr modules). -->
         <rust.crate.dir>${project.basedir}/src/main/rust</rust.crate.dir>
         <rust.wasm.target>wasm32-wasip1</rust.wasm.target>
         <rust.build.profile>release</rust.build.profile>
         <rust.wasm.output.dir>${rust.crate.dir}/target/${rust.wasm.target}/${rust.build.profile}</rust.wasm.output.dir>
-        <rust.wasm.filename>ultrahdr_wasm.wasm</rust.wasm.filename>
+        <rust.wasm.filename>jxl_wasm.wasm</rust.wasm.filename>
         <wasm.resources.dir>${project.basedir}/src/main/resources/wasm</wasm.resources.dir>
         <cargo.path>cargo</cargo.path>
         <rustup.path>rustup</rustup.path>
@@ -34,7 +36,11 @@
     </properties>
 
     <dependencies>
-        <!-- Core module: provides the ImageSource/TileSink interfaces. -->
+        <!-- Core module: ImageSource interface implemented by
+             JxlWasmImageSource.  The class is @AutoService-registered but
+             stays dormant unless this module is on the classpath (only the
+             native profile adds it) — the NightMonkeys JxlImageSource
+             remains the default on regular JVMs. -->
         <dependency>
             <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
             <artifactId>core</artifactId>
@@ -48,7 +54,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- ServiceLoader registration for UltraHdrImageSource/TileSink -->
+        <!-- ServiceLoader registration for JxlWasmImageSource. -->
         <dependency>
             <groupId>com.google.auto.service</groupId>
             <artifactId>auto-service-annotations</artifactId>
@@ -83,7 +89,7 @@
 
             <!--
                 1 ── Maven↔cargo integration (single exec-maven-plugin; same
-                      wiring as the jc2pa module).
+                      wiring as the jc2pa/ultrahdr modules).
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -158,7 +164,7 @@
                 </executions>
             </plugin>
 
-            <!-- 2 ── WASM resources dir + fixture copy (file operations only) ── -->
+            <!-- 2 ── WASM resources dir (file operations only) ── -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>

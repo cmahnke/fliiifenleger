@@ -474,6 +474,13 @@ public class Main implements Runnable {
     }
 
     public static void main(String[] args) {
+        // This is a headless CLI: pin headless mode before any AWT class
+        // loads.  Without it, macOS initializes AppKit on first Toolkit
+        // touch — from a worker thread that blocks forever (native images
+        // do not inherit a usable display session either).  A
+        // -Djava.awt.headless build flag alone does NOT propagate to
+        // runtime defaults, so this must be set programmatically.
+        System.setProperty("java.awt.headless", "true");
         int exitCode = new CommandLine(new Main()).execute(args);
         System.exit(exitCode);
     }

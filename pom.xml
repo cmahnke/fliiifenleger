@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
     <artifactId>fliiifenleger-parent</artifactId>
-    <version>0.3.1</version>
+    <version>0.3.2</version>
     <packaging>pom</packaging>
     <name>Fliiifenleger</name>
     <description>A experimental Java-based static IIIF tiler.</description>
@@ -18,6 +18,13 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>6.1.3</junit.version>
+        <picocli.version>4.7.7</picocli.version>
+        <!--
+            GraalVM polyglot version for the native profile's explicit
+            GraalWasm dependencies (cli/pom.xml).  Keep in sync with the
+            graalvm.version property in wasm-runtime/pom.xml.
+        -->
+        <graalvm.version>25.3.4.1</graalvm.version>
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.48</lombok.version>
         <jackson.version>3.2.2</jackson.version>
@@ -33,6 +40,7 @@
         <module>cli</module>
         <module>jc2pa</module>
         <module>ultrahdr</module>
+        <!-- jxl-wasm is NOT built by default (see the native profile below). -->
     </modules>
 
     <dependencyManagement>
@@ -171,6 +179,17 @@
                                 <artifactId>lombok</artifactId>
                                 <version>${lombok.version}</version>
                             </path>
+                            <!--
+                                picocli-codegen emits GraalVM reflect/resource
+                                config for @Command classes into
+                                target/classes/META-INF/native-image (consumed
+                                by native-image builds; inert JSON otherwise).
+                            -->
+                            <path>
+                                <groupId>info.picocli</groupId>
+                                <artifactId>picocli-codegen</artifactId>
+                                <version>${picocli.version}</version>
+                            </path>
                         </annotationProcessorPaths>
                         <compilerArgs>
                             <arg>-Xlint:deprecation</arg>
@@ -260,6 +279,61 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <!--
+            Native-build-only modules, enabled explicitly with -Pnative.
+            jxl-wasm (pure-Rust jxl-oxide decoder as WASM) is reserved for
+            the future GraalVM-native build: too slow under Chicory for
+            regular JVM use, so it stays out of the default reactor.
+        -->
+        <profile>
+            <id>native</id>
+            <modules>
+                <module>jxl-wasm</module>
+            </modules>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <version>3.6.3</version>
+                        <executions>
+                            <execution>
+                                <id>enforce-graalvm</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <!--
+                                            The native-image builder ships with GraalVM;
+                                            stock JDKs have no bin/native-image.  This
+                                            deliberately checks the file (not version
+                                            strings): modern GraalVMs no longer set
+                                            org.graalvm.version, and Oracle's
+                                            java.version (e.g. 25.0.4.1) does not
+                                            reveal the GraalVM release.
+                                            NOTE: bin/native-image is a symlink into
+                                            lib/svm, and requireFilesExist compares
+                                            canonical paths (symlinks never match) —
+                                            hence the check targets the canonical
+                                            target, stable since GraalVM 21.
+                                        -->
+                                        <requireFilesExist>
+                                            <message>Native builds require a GraalVM JDK (no native-image builder under ${java.home}). Set JAVA_HOME to GraalVM 25.3+ to match the pinned polyglot 25.3.x artifacts — mixing builder and polyglot versions fails the image build.</message>
+                                            <files>
+                                                <file>${java.home}/lib/svm/bin/native-image</file>
+                                            </files>
+                                        </requireFilesExist>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
     <!--
     <profiles>
         <profile>

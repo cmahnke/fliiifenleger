@@ -1,0 +1,22 @@
+[package]
+name = "jxl-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name       = "jxl_wasm"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pure-Rust JPEG XL decoder.  default-features = false keeps the build free
+# of C dependencies (no lcms2) and threading (no rayon): the module is
+# single-threaded per instance, parallelism comes from host-side lanes.
+[dependencies.jxl-oxide]
+version = "0.12"
+default-features = false
+
+[profile.release]
+opt-level     = "s"
+lto           = true
+codegen-units = 1
+strip         = true

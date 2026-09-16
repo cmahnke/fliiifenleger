@@ -19,6 +19,7 @@ updates:
       - "cli/"
       - "jc2pa/"
       - "ultrahdr/"
+      - "jxl-wasm/"
     schedule:
       interval: "weekly"
     groups:
