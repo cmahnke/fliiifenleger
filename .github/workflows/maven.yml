@@ -74,3 +74,59 @@ jobs:
         run: mvn --batch-mode deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Native variant (GraalVM): catches native-only breakage (reflection
+  # config, Chicory leaks, jxl-wasm compile errors, GraalWasm test
+  # failures) on every PR and main push instead of at release time.
+  # amd64 only — arm64 natives are covered by the release.yml matrix
+  # (native-image is same-arch only, no QEMU cross-build).
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up GraalVM
+        # Must stay on 25.3.x: the polyglot artifacts pin 25.3.x (see the
+        # graalvm.version properties) and builder/library skew fails the
+        # image build — same pin as release.yml.
+        uses: graalvm/setup-graalvm@v1
+        with:
+          version: '25.3'
+          distribution: 'graalvm'
+          cache: maven
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The jc2pa/jxl-wasm modules compile Rust crates to wasm32-wasip1.
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: wasm32-wasip1
+
+      # Enables the JXL image source tests in the core module (same
+      # packages as the release.yml amd64 leg).
+      - name: Install JXL library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libstdc++6 libtcmalloc-minimal4 libgcc-s1 libc6 libhwy-dev libpng16-16 libbrotli1 libjpeg8 libgif7
+
+          wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+          tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
+
+          sudo apt install -y -f ./libjxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./jxl_0.11.1_amd64.deb
+          sudo apt install -y -f ./libjxl-dev_0.11.1_amd64.deb
+          sudo apt-get -f install
+          sudo find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
+
+      # Full test suite on the JVM plus the native binary.  Must NOT
+      # deploy (the build job owns the snapshot deploy; a second deploy
+      # would conflict).
+      - name: Build and test native binary
+        run: mvn --batch-mode -Pnative verify
+
+      - name: Smoke-test the native binary
+        run: |
+          ./cli/target/fliiifenleger --version
+          ./cli/target/fliiifenleger generate -s jxl \
+            -o ./smoke-jxl jxl-wasm/src/test/resources/images/small.jxl
+          test -f ./smoke-jxl/info.json
