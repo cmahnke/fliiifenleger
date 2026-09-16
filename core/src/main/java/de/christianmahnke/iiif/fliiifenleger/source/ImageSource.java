@@ -3,6 +3,7 @@
 package de.christianmahnke.iiif.fliiifenleger.source;
 
 import java.awt.image.BufferedImage;
+import java.util.List;
 import java.util.Map;
 import java.net.URL;
 
@@ -60,4 +61,21 @@ public interface ImageSource {
      * @param options A map of key-value pairs.
      */
     default void setOptions(Map<String, String> options) {}
+
+    /**
+     * @return Short human-readable description of this source (used by {@code info list-sources}).
+     */
+    default String getDescription() {
+        return "";
+    }
+
+    /**
+     * Introspects the configuration options accepted by {@link #setOptions}.
+     *
+     * @return Descriptors with name and description (plus default, required flag and
+     *         type hint); empty when this source takes no options.
+     */
+    default List<de.christianmahnke.iiif.fliiifenleger.OptionDescriptor> getAvailableOptions() {
+        return List.of();
+    }
 }

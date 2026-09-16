@@ -29,12 +29,17 @@ import org.slf4j.LoggerFactory;
 @NoArgsConstructor
 public class DefaultImageSource extends AbstractImageSource implements ImageSource {
     private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-    private BufferedImage image;
+    protected BufferedImage image;
     private static final String NAME = "default";
 
     @Override
     public String getName() {
         return NAME;
+    }
+
+    @Override
+    public String getDescription() {
+        return "Default file-based image source using ImageIO (no options).";
     }
 
     @Override
@@ -51,7 +56,7 @@ public class DefaultImageSource extends AbstractImageSource implements ImageSour
         loadImage();
     }
 
-    private void loadImage()throws ImageSourceException  {
+    protected void loadImage()throws ImageSourceException  {
         if (this.url == null){
              throw new IllegalStateException("URL has not been set for DefaultImageSource.");
         }

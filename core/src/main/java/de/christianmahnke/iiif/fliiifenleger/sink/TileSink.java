@@ -41,6 +41,23 @@ public interface TileSink {
     default void setOptions(Map<String, String> options) {}
 
     /**
+     * @return Short human-readable description of this sink (used by {@code info list-sinks}).
+     */
+    default String getDescription() {
+        return "";
+    }
+
+    /**
+     * Introspects the configuration options accepted by {@link #setOptions}.
+     *
+     * @return Descriptors with name and description (plus default, required flag and
+     *         type hint); empty when this sink takes no options.
+     */
+    default java.util.List<de.christianmahnke.iiif.fliiifenleger.OptionDescriptor> getAvailableOptions() {
+        return java.util.List.of();
+    }
+
+    /**
      * Whether this sink consumes HDR content ({@code hdr.*} metadata keys)
      * when the source offers it.
      *

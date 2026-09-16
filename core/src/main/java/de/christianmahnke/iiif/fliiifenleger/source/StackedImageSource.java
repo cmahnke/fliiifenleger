@@ -3,6 +3,7 @@
 package de.christianmahnke.iiif.fliiifenleger.source;
 
 import com.google.auto.service.AutoService;
+import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.dataformat.yaml.YAMLFactory;
@@ -29,14 +30,30 @@ public class StackedImageSource implements ImageSource {
     private static final Logger log = LoggerFactory.getLogger(StackedImageSource.class);
     private static final String NAME = "stacked";
 
-    private ImageSource finalSource;
-    private int totalWidth = 0;
-    private int totalHeight = 0;
-    private URL url;
+    protected ImageSource finalSource;
+    protected int totalWidth = 0;
+    protected int totalHeight = 0;
+    protected URL url;
 
     @Override
     public String getName() {
         return NAME;
+    }
+
+    @Override
+    public String getDescription() {
+        return "Composite source chaining a base source with manipulator sources (legacy source.N options or YAML config).";
+    }
+
+    @Override
+    public List<OptionDescriptor> getAvailableOptions() {
+        return List.of(
+                OptionDescriptor.optional("config",
+                        "Path to a YAML config file with a 'sources' list (first entry is the base source with type/path, following entries are manipulators with type/options).",
+                        "", "path"),
+                OptionDescriptor.optional("source.N",
+                        "Legacy chained source definition N=0,1,...: 'type:/path/to/image' for the base source, 'type:key=value,...' for manipulators.",
+                        "", "string"));
     }
 
     @Override
@@ -86,7 +103,7 @@ public class StackedImageSource implements ImageSource {
      * Returns the final source in the processing chain.
      * This is package-private for testing purposes.
      */
-    ImageSource getFinalSource() {
+    protected ImageSource getFinalSource() {
         return finalSource;
     }
 
@@ -105,7 +122,7 @@ public class StackedImageSource implements ImageSource {
     }
 
     @SuppressWarnings("unchecked")
-    private void parseLegacyOptions(Map<String, String> options) {
+    protected void parseLegacyOptions(Map<String, String> options) {
         // Expecting options like 'source.0=default:/path/to/image1.jpg', 'source.1=jxl:/path/to/image2.jxl'
         List<Map.Entry<String, String>> sourceDefs = options.entrySet().stream()
                 .filter(e -> e.getKey().startsWith("source."))
@@ -144,7 +161,7 @@ public class StackedImageSource implements ImageSource {
      * }</pre>
      * @param configPath The path to the YAML configuration file.
      */
-    private void parseYamlConfig(String configPath) {
+    protected void parseYamlConfig(String configPath) {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         try {
             File configFile = new File(configPath);
@@ -176,13 +193,13 @@ public class StackedImageSource implements ImageSource {
         }
     }
 
-    private void chainManipulators(List<Map.Entry<String, String>> manipulatorDefs) throws Exception {
+    protected void chainManipulators(List<Map.Entry<String, String>> manipulatorDefs) throws Exception {
         for (Map.Entry<String, String> def : manipulatorDefs) {
             this.finalSource = createManipulatorFromString(def.getValue(), this.finalSource);
         }
     }
 
-    private ImageSource createSourceFromString(String sourceDef, Map<String, String> options) throws Exception {
+    protected ImageSource createSourceFromString(String sourceDef, Map<String, String> options) throws Exception {
         String[] parts = sourceDef.split(":", 2);
         if (parts.length != 2) {
             throw new IllegalArgumentException("Invalid source definition: " + sourceDef + ". Expected format 'type:/path/to/image'");
@@ -190,7 +207,7 @@ public class StackedImageSource implements ImageSource {
         return createSource(parts[0], parts[1], options);
     }
 
-    private ImageSource createSourceFromConfig(Map<String, Object> config) throws Exception {
+    protected ImageSource createSourceFromConfig(Map<String, Object> config) throws Exception {
         String type = (String) config.get("type");
         String path = (String) config.get("path");
         @SuppressWarnings("unchecked")
@@ -200,7 +217,7 @@ public class StackedImageSource implements ImageSource {
         return createSource(type, path, sourceOpts);
     }
 
-    private ImageSource createSource(String type, String path, Map<String, String> options) throws Exception {
+    protected ImageSource createSource(String type, String path, Map<String, String> options) throws Exception {
         ImageSource sourceTemplate = Tiler.SOURCE_REGISTRY.get(type);
         if (sourceTemplate == null) {
             throw new IllegalArgumentException("Unknown source type '" + type + "'");
@@ -216,7 +233,7 @@ public class StackedImageSource implements ImageSource {
         return instance;
     }
 
-    private ManipulatorImageSource createManipulatorFromString(String sourceDef, ImageSource baseSource) throws Exception {
+    protected ManipulatorImageSource createManipulatorFromString(String sourceDef, ImageSource baseSource) throws Exception {
         // Manipulators can be defined as just "type" or with options like "type:key1=value1,key2=value2".
         // The path part of a source definition is used for options here.
         String[] parts = sourceDef.split(":", 2);
@@ -235,7 +252,7 @@ public class StackedImageSource implements ImageSource {
         return createManipulator(type, manipulatorOptions, baseSource);
     }
 
-    private ManipulatorImageSource createManipulatorFromConfig(Map<String, Object> config, ImageSource baseSource) throws Exception {
+    protected ManipulatorImageSource createManipulatorFromConfig(Map<String, Object> config, ImageSource baseSource) throws Exception {
         String type = (String) config.get("type");
         @SuppressWarnings("unchecked")
         Map<String, String> sourceOpts = ((Map<String, Object>) config.getOrDefault("options", new HashMap<>()))
@@ -244,7 +261,7 @@ public class StackedImageSource implements ImageSource {
         return createManipulator(type, sourceOpts, baseSource);
     }
 
-    private ManipulatorImageSource createManipulator(String type, Map<String, String> options, ImageSource baseSource) throws Exception {
+    protected ManipulatorImageSource createManipulator(String type, Map<String, String> options, ImageSource baseSource) throws Exception {
         ImageSource sourceTemplate = Tiler.SOURCE_REGISTRY.get(type);
         if (sourceTemplate == null) throw new IllegalArgumentException("Unknown source type '" + type + "'");
         if (!(sourceTemplate instanceof ManipulatorImageSource)) throw new IllegalArgumentException("Source type '" + type + "' is not a ManipulatorImageSource.");
@@ -255,7 +272,7 @@ public class StackedImageSource implements ImageSource {
         return instance;
     }
 
-    private void finalizeConfiguration() throws MalformedURLException {
+    protected void finalizeConfiguration() throws MalformedURLException {
         if (finalSource != null) {
             // Set a virtual URL for the stacked image, using the final source's path
             String firstImagePath = finalSource.getUrl().getPath();
@@ -267,7 +284,7 @@ public class StackedImageSource implements ImageSource {
         }
     }
     
-    private void calculateDimensions() {
+    protected void calculateDimensions() {
         if (finalSource == null) {
             totalWidth = 0;
             totalHeight = 0;

@@ -40,6 +40,7 @@ import java.util.concurrent.Callable;
                 Main.GenerateCommand.class,
                 Main.ValidateCommand.class,
                 Main.ManifestCommand.class,
+                Main.RuntimeCommand.class,
                 CommandLine.HelpCommand.class,
                 Main.InfoCommand.class
         })
@@ -488,7 +489,9 @@ public class Main implements Runnable {
             mixinStandardHelpOptions = true,
             subcommands = {
                     InfoCommand.ListSourcesCommand.class,
-                    InfoCommand.ListSinksCommand.class
+                    InfoCommand.ListSinksCommand.class,
+                    InfoCommand.DescribeSourceCommand.class,
+                    InfoCommand.DescribeSinkCommand.class
             })
     static class InfoCommand implements Runnable {
         @Override
@@ -496,15 +499,64 @@ public class Main implements Runnable {
             new CommandLine(this).usage(System.out);
         }
 
+        static void printOptions(List<de.christianmahnke.iiif.fliiifenleger.OptionDescriptor> options) {
+            if (options == null || options.isEmpty()) {
+                System.out.println("    (no options)");
+                return;
+            }
+            for (de.christianmahnke.iiif.fliiifenleger.OptionDescriptor opt : options) {
+                StringBuilder line = new StringBuilder("    - ").append(opt.name());
+                line.append(" <").append(opt.type()).append(">");
+                if (opt.required()) {
+                    line.append(" (required)");
+                } else if (!opt.defaultValue().isEmpty()) {
+                    line.append(" [default: ").append(opt.defaultValue()).append("]");
+                }
+                System.out.println(line);
+                if (!opt.description().isEmpty()) {
+                    System.out.println("        " + opt.description());
+                }
+            }
+        }
+
         @Command(name = "list-sources", description = "List all available image sources.")
         static class ListSourcesCommand implements Callable<Integer> {
+            @Option(names = {"-v", "--verbose"}, description = "Show descriptions and available options per source.")
+            private boolean verbose;
+
             @Override
             public Integer call() {
                 if (Tiler.SOURCE_REGISTRY.isEmpty()) {
                     System.out.println("No image sources found. Make sure they are on the classpath and registered via @AutoService.");
                 } else {
                     System.out.println("Available image sources:");
-                    Tiler.SOURCE_REGISTRY.keySet().forEach(key -> System.out.println(" - " + key));
+                    Tiler.SOURCE_REGISTRY.entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .forEach(entry -> {
+                                ImageSource source = entry.getValue();
+                                String description = "";
+                                try {
+                                    description = source.getDescription();
+                                } catch (Exception e) {
+                                    // Ignore introspection failures, still list the name.
+                                }
+                                if (verbose) {
+                                    System.out.println(" - " + entry.getKey()
+                                            + " (" + source.getClass().getName() + ")"
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                    try {
+                                        printOptions(source.getAvailableOptions());
+                                    } catch (Exception e) {
+                                        System.out.println("    (option introspection failed: " + e.getMessage() + ")");
+                                    }
+                                } else {
+                                    System.out.println(" - " + entry.getKey()
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                }
+                            });
+                    if (!verbose) {
+                        System.out.println("Use '--verbose' for option details or 'info describe-source <name>'.");
+                    }
                 }
                 return 0;
             }
@@ -512,11 +564,189 @@ public class Main implements Runnable {
 
         @Command(name = "list-sinks", description = "List all available image sinks.")
         static class ListSinksCommand implements Callable<Integer> {
+            @Option(names = {"-v", "--verbose"}, description = "Show descriptions and available options per sink.")
+            private boolean verbose;
+
             @Override
             public Integer call() {
-                System.out.println("Available image sinks:");
-                Tiler.SINK_REGISTRY.keySet().forEach(key -> System.out.println(" - " + key));
+                if (Tiler.SINK_REGISTRY.isEmpty()) {
+                    System.out.println("No image sinks found. Make sure they are on the classpath and registered via @AutoService.");
+                } else {
+                    System.out.println("Available image sinks:");
+                    Tiler.SINK_REGISTRY.entrySet().stream()
+                            .sorted(Map.Entry.comparingByKey())
+                            .forEach(entry -> {
+                                TileSink sink = entry.getValue();
+                                String description = "";
+                                try {
+                                    description = sink.getDescription();
+                                } catch (Exception e) {
+                                    // Ignore introspection failures, still list the name.
+                                }
+                                if (verbose) {
+                                    System.out.println(" - " + entry.getKey()
+                                            + " (" + sink.getClass().getName() + ")"
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                    try {
+                                        printOptions(sink.getAvailableOptions());
+                                    } catch (Exception e) {
+                                        System.out.println("    (option introspection failed: " + e.getMessage() + ")");
+                                    }
+                                } else {
+                                    System.out.println(" - " + entry.getKey()
+                                            + (description.isEmpty() ? "" : ": " + description));
+                                }
+                            });
+                    if (!verbose) {
+                        System.out.println("Use '--verbose' for option details or 'info describe-sink <name>'.");
+                    }
+                }
                 return 0;
+            }
+        }
+
+        @Command(name = "describe-source", description = "Show available options for one image source.")
+        static class DescribeSourceCommand implements Callable<Integer> {
+            @Parameters(index = "0", description = "Name of the image source (see 'info list-sources').")
+            private String name;
+
+            @Override
+            public Integer call() {
+                ImageSource source = Tiler.SOURCE_REGISTRY.get(name);
+                if (source == null) {
+                    System.out.println("Unknown image source: '" + name + "'. Available: "
+                            + String.join(", ", new java.util.TreeSet<>(Tiler.SOURCE_REGISTRY.keySet())));
+                    return 1;
+                }
+                System.out.println("Source '" + name + "' (" + source.getClass().getName() + ")");
+                String description = source.getDescription();
+                if (!description.isEmpty()) {
+                    System.out.println(description);
+                }
+                System.out.println("Options (via --source-opt key=value):");
+                printOptions(source.getAvailableOptions());
+                return 0;
+            }
+        }
+
+        @Command(name = "describe-sink", description = "Show available options for one image sink.")
+        static class DescribeSinkCommand implements Callable<Integer> {
+            @Parameters(index = "0", description = "Name of the image sink (see 'info list-sinks').")
+            private String name;
+
+            @Override
+            public Integer call() {
+                TileSink sink = Tiler.SINK_REGISTRY.get(name);
+                if (sink == null) {
+                    System.out.println("Unknown image sink: '" + name + "'. Available: "
+                            + String.join(", ", new java.util.TreeSet<>(Tiler.SINK_REGISTRY.keySet())));
+                    return 1;
+                }
+                System.out.println("Sink '" + name + "' (" + sink.getClass().getName() + ")");
+                String description = sink.getDescription();
+                if (!description.isEmpty()) {
+                    System.out.println(description);
+                }
+                System.out.println("Options (via --sink-opt key=value):");
+                printOptions(sink.getAvailableOptions());
+                return 0;
+            }
+        }
+    }
+
+    @Command(name = "runtime",
+            description = "Show the used WASM runtime and JXL backend.",
+            mixinStandardHelpOptions = true)
+    static class RuntimeCommand implements Callable<Integer> {
+        @Override
+        public Integer call() {
+            System.out.println("JVM: " + System.getProperty("java.version", "?")
+                    + " (" + System.getProperty("java.vendor", "?") + ")");
+            String nativeImage = System.getProperty("org.graalvm.nativeimage.imagecode");
+            System.out.println("GraalVM native image: " + ("runtime".equals(nativeImage) ? "yes" : "no"));
+            String graalvmVersion = System.getProperty("org.graalvm.version");
+            System.out.println("GraalVM version property: " + (graalvmVersion != null ? graalvmVersion : "(unset)"));
+
+            System.out.println("WASM engines:");
+            System.out.println(" - chicory available: " + isChicoryAvailable());
+            System.out.println(" - graalvm available: " + isGraalAvailable());
+            System.out.println(" - selection (-Dwasm.engine): "
+                    + System.getProperty(
+                            de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine.ENGINE_PROPERTY, "(unset -> auto)"));
+            System.out.println(" - lanes (-Dwasm.lanes): "
+                    + System.getProperty(
+                            de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine.LANES_PROPERTY, "(unset)"));
+            try {
+                int lanes = de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine.systemParallelism(null);
+                System.out.println(" - effective lanes (auto): " + lanes
+                        + " (max GraalWasm lanes: "
+                        + de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine.MAX_GRAAL_LANES
+                        + ", default cap: "
+                        + de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine.DEFAULT_MAX_LANES + ")");
+            } catch (Exception e) {
+                System.out.println(" - effective lanes (auto): (unavailable: " + e.getMessage() + ")");
+            }
+
+            System.out.println("JXL backends:");
+            System.out.println(" - imageio-jxl reader: " + describeImageIoJxl());
+            System.out.println(" - jxl-wasm module: " + describeJxlWasm());
+            ImageSource registered = Tiler.SOURCE_REGISTRY.get("jxl");
+            System.out.println(" - registered 'jxl' source: "
+                    + (registered == null ? "(none)" : registered.getClass().getName()));
+            return 0;
+        }
+
+        private static String describeImageIoJxl() {
+            try {
+                java.util.Iterator<javax.imageio.ImageReader> readers =
+                        javax.imageio.ImageIO.getImageReadersBySuffix("jxl");
+                if (!readers.hasNext()) {
+                    return "not on classpath (no ImageIO reader for 'jxl')";
+                }
+                javax.imageio.ImageReader reader = readers.next();
+                String impl = reader.getClass().getName();
+                String version = null;
+                try {
+                    Package pkg = reader.getClass().getPackage();
+                    version = pkg != null ? pkg.getImplementationVersion() : null;
+                } catch (Exception e) {
+                    version = null;
+                }
+                return "present (" + impl + (version != null ? ", version " + version : "") + ")";
+            } catch (Exception e) {
+                return "unavailable (" + e.getMessage() + ")";
+            }
+        }
+
+        private static String describeJxlWasm() {
+            try {
+                Class.forName("de.christianmahnke.iiif.fliiifenleger.jxl.JxlWasm");
+            } catch (ClassNotFoundException e) {
+                return "not on classpath (regular JVM default; enabled with -Pnative)";
+            } catch (Exception e) {
+                return "unavailable (" + e.getMessage() + ")";
+            }
+            return "present (jxl-oxide codec version requires WASM execution, see JxlDecoder.codecVersion())";
+        }
+
+        private static boolean isChicoryAvailable() {
+            try {
+                Class.forName("de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine");
+                Class.forName("com.dylibso.chicory.runtime.Instance");
+                return true;
+            } catch (ClassNotFoundException e) {
+                return false;
+            }
+        }
+
+        private static boolean isGraalAvailable() {
+            try {
+                Class<?> engine = Class.forName("de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine");
+                // Reflective to avoid a compile-time dependency on the optional polyglot artifacts.
+                java.lang.reflect.Method m = engine.getMethod("create", String.class, byte[].class);
+                return m != null && Class.forName("org.graalvm.polyglot.Context") != null;
+            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                return false;
             }
         }
     }

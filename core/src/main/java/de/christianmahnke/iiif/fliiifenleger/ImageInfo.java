@@ -40,7 +40,7 @@ public class ImageInfo {
         this.version = version;
     }
 
-    private List<Integer> calculateScaleFactors(int zoomLevels) {
+    protected List<Integer> calculateScaleFactors(int zoomLevels) {
         List<Integer> factors = new ArrayList<>();
         for (int i = 0; i < zoomLevels; i++) {
             factors.add((int) Math.pow(2, i));
@@ -63,7 +63,7 @@ public class ImageInfo {
         return (int) Math.ceil(Math.log(maxDim / tileSize) / Math.log(2)) + 1;
     }
 
-    private List<Size> calculateSizes(int width, int height) {
+    protected List<Size> calculateSizes(int width, int height) {
         List<Size> sizeList = new ArrayList<>();
         int currentWidth = width;
         int currentHeight = height;
@@ -139,7 +139,7 @@ public class ImageInfo {
         }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    private static class Tile {
+    protected static class Tile {
         @JsonProperty
         public int width;
         @JsonProperty

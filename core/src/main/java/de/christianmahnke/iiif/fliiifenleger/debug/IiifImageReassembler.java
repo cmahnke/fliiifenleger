@@ -30,15 +30,15 @@ public class IiifImageReassembler {
 
     private static final Logger log = LoggerFactory.getLogger(IiifImageReassembler.class);
 
-    private final URL url;
-    private JsonNode infoJson;
-    private URI imageBaseUri;
+    protected final URL url;
+    protected JsonNode infoJson;
+    protected URI imageBaseUri;
 
     /**
      * Raw tile bytes collected during the last reassembly when C2PA
      * collection was requested (tile URL → asset bytes).
      */
-    private final Map<String, byte[]> fetchedTileBytes = new ConcurrentHashMap<>();
+    protected final Map<String, byte[]> fetchedTileBytes = new ConcurrentHashMap<>();
 
     public IiifImageReassembler(URL url) {
         this.url = url;

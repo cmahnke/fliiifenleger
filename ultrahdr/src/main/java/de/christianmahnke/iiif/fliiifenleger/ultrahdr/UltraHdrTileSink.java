@@ -6,6 +6,7 @@ package de.christianmahnke.iiif.fliiifenleger.ultrahdr;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
+import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
@@ -141,6 +142,33 @@ public class UltraHdrTileSink extends AbstractTileSink implements AutoCloseable 
     @Override
     public String getName() {
         return "ultrahdr";
+    }
+
+    @Override
+    public String getDescription() {
+        return "UltraHDR gain-map tile sink assembling delegate tiles with cropped gain maps via WASM.";
+    }
+
+    @Override
+    public java.util.List<OptionDescriptor> getAvailableOptions() {
+        java.util.ArrayList<OptionDescriptor> options =
+                new java.util.ArrayList<>(super.getAvailableOptions());
+        options.add(OptionDescriptor.optional("delegate",
+                "Name of the delegate sink rendering the primary tile.",
+                "default"));
+        options.add(OptionDescriptor.optional("runtime",
+                "WASM engine selection: auto, chicory, or graalvm.",
+                "auto"));
+        options.add(OptionDescriptor.optional("quality",
+                "JPEG quality for the primary image re-encode.",
+                "90", "int"));
+        options.add(OptionDescriptor.optional("gainmap-quality",
+                "JPEG quality for the gain map re-encode.",
+                "85", "int"));
+        options.add(OptionDescriptor.optional("threads",
+                "Parallel assembly lanes; 1 selects serial execution (default: one per core capped at 4, -Dwasm.lanes=N sets the default).",
+                "", "int"));
+        return java.util.List.copyOf(options);
     }
 
     /**

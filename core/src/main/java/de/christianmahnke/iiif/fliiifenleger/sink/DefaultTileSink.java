@@ -49,4 +49,9 @@ public class DefaultTileSink extends AbstractTileSink {
 
     @Override
     public String getName() { return "default"; }
+
+    @Override
+    public String getDescription() {
+        return "Default tile sink writing tiles with ImageIO.";
+    }
 }

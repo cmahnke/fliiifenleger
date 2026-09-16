@@ -59,6 +59,19 @@ public class UltraHdrImageSource implements ImageSource, GainMapSource {
     }
 
     @Override
+    public String getDescription() {
+        return "UltraHDR JPEG source splitting primary image and gain map via the WASM codec.";
+    }
+
+    @Override
+    public java.util.List<de.christianmahnke.iiif.fliiifenleger.OptionDescriptor> getAvailableOptions() {
+        return java.util.List.of(
+                de.christianmahnke.iiif.fliiifenleger.OptionDescriptor.optional("runtime",
+                        "WASM engine selection: auto, chicory, or graalvm.",
+                        "auto"));
+    }
+
+    @Override
     public void load(URL url) throws ImageSourceException {
         this.url = url;
         this.gainMap = null;

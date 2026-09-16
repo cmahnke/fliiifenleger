@@ -7,6 +7,7 @@ package de.christianmahnke.jc2pa;
 import de.christianmahnke.iiif.fliiifenleger.wasm.WasmEngine;
 
 import com.google.auto.service.AutoService;
+import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
 import de.christianmahnke.iiif.fliiifenleger.sink.AbstractTileSink;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
@@ -186,6 +187,48 @@ public class C2paTileSink extends AbstractTileSink implements AutoCloseable {
     @Override
     public String getName() {
         return "c2pa";
+    }
+
+    @Override
+    public String getDescription() {
+        return "C2PA-signing tile sink decorating a delegate sink with per-tile manifests via WASM.";
+    }
+
+    @Override
+    public java.util.List<OptionDescriptor> getAvailableOptions() {
+        java.util.ArrayList<OptionDescriptor> options =
+                new java.util.ArrayList<>(super.getAvailableOptions());
+        options.add(OptionDescriptor.optional("delegate",
+                "Name of the delegate sink rendering the tile before signing.",
+                "default"));
+        options.add(OptionDescriptor.optional("runtime",
+                "WASM engine selection: auto, chicory, or graalvm.",
+                "auto"));
+        options.add(OptionDescriptor.optional("cert",
+                "Path to PEM certificate chain file (requires 'key' for real signatures).",
+                "", "path"));
+        options.add(OptionDescriptor.optional("key",
+                "Path to PEM private key file (requires 'cert' for real signatures).",
+                "", "path"));
+        options.add(OptionDescriptor.optional("alg",
+                "Signing algorithm for real key material.",
+                "es256"));
+        options.add(OptionDescriptor.optional("tsa",
+                "Timestamp authority URL (optional, only with cert/key).",
+                "", "uri"));
+        options.add(OptionDescriptor.optional("cert-name",
+                "Common name for the ephemeral certificate when no cert/key is given.",
+                "fliiifenleger"));
+        options.add(OptionDescriptor.optional("claim-generator",
+                "Claim generator string written into the manifest.",
+                "fliiifenleger"));
+        options.add(OptionDescriptor.optional("trust-anchor",
+                "Absolute URI advertised as trustAnchor in a V3 info.json service entry (requires IIIF Image API 3).",
+                "", "uri"));
+        options.add(OptionDescriptor.optional("threads",
+                "Parallel signing lanes; 1 selects serial execution (default: one per core capped at 4, -Dwasm.lanes=N sets the default).",
+                "", "int"));
+        return java.util.List.copyOf(options);
     }
 
     /**

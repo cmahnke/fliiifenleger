@@ -33,12 +33,12 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
     private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
     private static final String NAME = "iiif";
 
-    private URI imageBaseUri;
-    private int width;
-    private int height;
-    private JsonNode infoJson;
-    private int apiLevel = -1; // -1: unknown, 0: level 0, etc.
-    private ImageInfo.IIIFVersion apiVersion;
+    protected URI imageBaseUri;
+    protected int width;
+    protected int height;
+    protected JsonNode infoJson;
+    protected int apiLevel = -1; // -1: unknown, 0: level 0, etc.
+    protected ImageInfo.IIIFVersion apiVersion;
 
     @Override
     public void load(URL url)throws ImageSourceException{
@@ -46,7 +46,7 @@ public class IiifImageSource extends AbstractImageSource implements ImageSource 
         loadImage();
     }
 
-    private void loadImage()throws ImageSourceException  {
+    protected void loadImage()throws ImageSourceException  {
 try {
             loadInfoJson();
         } catch (IOException | URISyntaxException | ImageSourceException e) {
@@ -55,7 +55,7 @@ try {
         }
     }
 
-    private void loadInfoJson() throws IOException, URISyntaxException, ImageSourceException {
+    protected void loadInfoJson() throws IOException, URISyntaxException, ImageSourceException {
         log.debug("Fetching info.json from: {}", url);
         try (InputStream is = getInputStream(url);
              Reader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
@@ -99,6 +99,11 @@ try {
     }
 
     @Override
+    public String getDescription() {
+        return "Remote IIIF Image API source fetching tiles from an info.json URL (no options).";
+    }
+
+    @Override
     public int getWidth() {
         if (infoJson == null) {
             throw new IllegalStateException("IIIF Image Source not initialized. Call setUrl() first.");
@@ -110,7 +115,7 @@ try {
     public int getHeight() {
         return height;
     }
-    private void ensureInitialized() {
+    protected void ensureInitialized() {
         if (this.imageBaseUri == null) throw new IllegalStateException("IIIF Image Source not initialized. Call setUrl() first.");
     }
 
@@ -163,7 +168,7 @@ try {
         }
     }
 
-    private BufferedImage cropInMemory(int x, int y, int width, int height, double scale) throws ImageSourceException {
+    protected BufferedImage cropInMemory(int x, int y, int width, int height, double scale) throws ImageSourceException {
         log.warn("Performing in-memory crop for Level 0 IIIF source. This may be slow and memory-intensive.");
         // Level 0 only guarantees /full/full/0/default.jpg
         String fullImageUrlString = String.format("%s/full/full/0/default.jpg", this.imageBaseUri.toString());

@@ -4,7 +4,6 @@ package de.christianmahnke.iiif.fliiifenleger.source;
 
 import com.google.auto.service.AutoService;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -23,11 +22,11 @@ import static org.junit.jupiter.api.Assertions.*;
 public class StackedImageSourceTest {
 
     private StackedImageSource stackedSource;
-    private static String image1Path;
-    private static DefaultImageSource source1;
+    private String image1Path;
+    private DefaultImageSource source1;
 
     @TempDir
-    static Path tempDir;
+    Path tempDir;
 
     /**
      * A mock ManipulatorImageSource for testing the chaining functionality.
@@ -59,8 +58,8 @@ public class StackedImageSourceTest {
         @Override public Map<String, Object> getMetadata() { return baseSource.getMetadata(); }
     }
 
-    @BeforeAll
-    public static void setUpClass() throws Exception {
+    @BeforeEach
+    public void setUpClass() throws Exception {
         // Manually register sources for testing purposes
         // In a real run, ServiceLoader would handle this.
         if (Tiler.SOURCE_REGISTRY.get("default") == null) {

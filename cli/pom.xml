@@ -28,6 +28,11 @@
             <artifactId>ultrahdr</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>de.christianmahnke.iiif.fliiifenleger</groupId>
+            <artifactId>wasm-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- CLI -->
         <dependency>
             <groupId>info.picocli</groupId>

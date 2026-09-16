@@ -194,4 +194,9 @@ public class JxlWasmImageSource extends AbstractImageSource implements ImageSour
     public String getName() {
         return JxlWasmImageSource.NAME;
     }
+
+    @Override
+    public String getDescription() {
+        return "JPEG XL source via the jxl-wasm module (pure-Rust jxl-oxide decoder, GraalVM-native path, no options).";
+    }
 }

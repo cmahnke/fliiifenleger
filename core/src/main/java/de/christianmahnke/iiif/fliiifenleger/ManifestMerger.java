@@ -169,7 +169,7 @@ public class ManifestMerger {
         Files.writeString(output, result);
     }
 
-    private static class ManifestData {
+    protected static class ManifestData {
         final JsonNode node;
         final String id;
 

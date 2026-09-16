@@ -11,20 +11,45 @@ import java.awt.image.ColorConvertOp;
 import java.awt.image.ConvolveOp;
 import java.awt.image.Kernel;
 import java.awt.image.RescaleOp;
+import java.util.List;
 import java.util.Map;
+
+import de.christianmahnke.iiif.fliiifenleger.OptionDescriptor;
 
 @AutoService(ImageSource.class)
 @NoArgsConstructor
 public class FilterImageSource extends AbstractManipulatorImageSource {
     private static final String NAME = "filter";
-    private String filterType = "none";
-    private int thresholdValue = 128; // Default for threshold filter
-    private int posterizeLevels = 4; // Default for posterize filter
-    private int blurRadius = 3; // Default for blur filter
+    protected String filterType = "none";
+    protected int thresholdValue = 128; // Default for threshold filter
+    protected int posterizeLevels = 4; // Default for posterize filter
+    protected int blurRadius = 3; // Default for blur filter
 
     @Override
     public String getName() {
         return NAME;
+    }
+
+    @Override
+    public String getDescription() {
+        return "Manipulator source applying an image filter (grayscale, invert, posterize, threshold, sepia, blur).";
+    }
+
+    @Override
+    public List<OptionDescriptor> getAvailableOptions() {
+        return List.of(
+                OptionDescriptor.optional("type",
+                        "Filter to apply: none, grayscale, invert, posterize, threshold, sepia, blur.",
+                        "none"),
+                OptionDescriptor.optional("threshold",
+                        "Luminance threshold (0-255) for the threshold filter.",
+                        "128", "int"),
+                OptionDescriptor.optional("posterizeLevels",
+                        "Number of color levels per channel for the posterize filter.",
+                        "4", "int"),
+                OptionDescriptor.optional("blurRadius",
+                        "Blur kernel radius (made odd internally) for the blur filter.",
+                        "3", "int"));
     }
 
     @Override
@@ -51,7 +76,7 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         return applyFilter(originalCrop);
     }
 
-    private BufferedImage applyFilter(BufferedImage original) {
+    protected BufferedImage applyFilter(BufferedImage original) {
         if (original == null) return null;
 
         switch (filterType.toLowerCase()) {
@@ -74,20 +99,20 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         }
     }
 
-    private BufferedImage toGrayscale(BufferedImage original) {
+    protected BufferedImage toGrayscale(BufferedImage original) {
         BufferedImage grayImage = new BufferedImage(original.getWidth(), original.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
         ColorConvertOp op = new ColorConvertOp(original.getColorModel().getColorSpace(), grayImage.getColorModel().getColorSpace(), null);
         op.filter(original, grayImage);
         return grayImage;
     }
 
-    private BufferedImage invertColors(BufferedImage original) {
+    protected BufferedImage invertColors(BufferedImage original) {
         // Invert colors using RescaleOp
         RescaleOp op = new RescaleOp(-1.0f, 255f, null);
         return op.filter(original, null);
     }
 
-    private BufferedImage posterize(BufferedImage original) {
+    protected BufferedImage posterize(BufferedImage original) {
         if (posterizeLevels <= 1) {
             return original; // No change or invalid level
         }
@@ -113,7 +138,7 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         return posterizedImage;
     }
 
-    private BufferedImage toThreshold(BufferedImage original) {
+    protected BufferedImage toThreshold(BufferedImage original) {
         BufferedImage thresholdImage = new BufferedImage(original.getWidth(), original.getHeight(), BufferedImage.TYPE_BYTE_BINARY);
         for (int y = 0; y < original.getHeight(); y++) {
             for (int x = 0; x < original.getWidth(); x++) {
@@ -134,7 +159,7 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         return thresholdImage;
     }
 
-    private BufferedImage toSepia(BufferedImage original) {
+    protected BufferedImage toSepia(BufferedImage original) {
         BufferedImage sepiaImage = new BufferedImage(original.getWidth(), original.getHeight(), original.getType());
 
         for (int y = 0; y < original.getHeight(); y++) {
@@ -161,7 +186,7 @@ public class FilterImageSource extends AbstractManipulatorImageSource {
         return sepiaImage;
     }
 
-    private BufferedImage blur(BufferedImage original) {
+    protected BufferedImage blur(BufferedImage original) {
         // The radius must be odd for a symmetrical kernel
         int radius = (blurRadius % 2 == 0) ? blurRadius + 1 : blurRadius;
         int size = radius * radius;

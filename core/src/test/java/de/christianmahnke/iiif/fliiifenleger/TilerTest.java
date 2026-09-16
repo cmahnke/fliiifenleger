@@ -11,6 +11,7 @@ import de.christianmahnke.iiif.fliiifenleger.source.ImageSourceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.awt.GraphicsEnvironment;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated("mutates the tiler.workers system property")
 public class TilerTest {
 
     @TempDir

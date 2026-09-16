@@ -161,7 +161,7 @@ public final class InfoJsonValidator {
         return null;
     }
 
-    private static List<String> semanticChecks(JsonNode node, ImageInfo.IIIFVersion version) {
+    protected static List<String> semanticChecks(JsonNode node, ImageInfo.IIIFVersion version) {
         List<String> errors = new ArrayList<>();
         if (version == ImageInfo.IIIFVersion.V3) {
             JsonNode context = node.get("@context");
@@ -216,11 +216,11 @@ public final class InfoJsonValidator {
         return errors;
     }
 
-    private static Schema schemaFor(ImageInfo.IIIFVersion version) {
+    protected static Schema schemaFor(ImageInfo.IIIFVersion version) {
         return version == ImageInfo.IIIFVersion.V3 ? V3_SCHEMA : V2_SCHEMA;
     }
 
-    private static Schema loadComposed(String baseResource,
+    protected static Schema loadComposed(String baseResource,
                                        List<de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension> extensions) {
         JsonNode base;
         try (InputStream in = InfoJsonValidator.class.getResourceAsStream(baseResource)) {
@@ -246,11 +246,11 @@ public final class InfoJsonValidator {
         return registry.getSchema(composed);
     }
 
-    private static String textOrNull(JsonNode node) {
+    protected static String textOrNull(JsonNode node) {
         return node != null && node.isTextual() ? node.asText() : null;
     }
 
-    private static boolean isAbsoluteUri(String value) {
+    protected static boolean isAbsoluteUri(String value) {
         try {
             return new java.net.URI(value).isAbsolute();
         } catch (Exception e) {
@@ -258,7 +258,7 @@ public final class InfoJsonValidator {
         }
     }
 
-    private static boolean findKey(JsonNode node, String key) {
+    protected static boolean findKey(JsonNode node, String key) {
         if (node == null) {
             return false;
         }

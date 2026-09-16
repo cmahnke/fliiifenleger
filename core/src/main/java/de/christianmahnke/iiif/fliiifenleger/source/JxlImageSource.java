@@ -18,7 +18,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AutoService(ImageSource.class)
 public class JxlImageSource extends AbstractImageSource implements ImageSource {
-    private BufferedImage image;
+    protected BufferedImage image;
     private static final String NAME = "jxl";
 
     @Override
@@ -42,7 +42,7 @@ public class JxlImageSource extends AbstractImageSource implements ImageSource {
         return image.getHeight();
     }
 
-     private void loadImage() throws ImageSourceException  {
+     protected void loadImage() throws ImageSourceException  {
         if (this.url == null){
             throw new IllegalStateException("URL has not been set for JxlImageSource.");
         }
@@ -102,6 +102,11 @@ public class JxlImageSource extends AbstractImageSource implements ImageSource {
 
     public String getName() {
         return JxlImageSource.NAME;
+    }
+
+    @Override
+    public String getDescription() {
+        return "JPEG XL source via the NightMonkeys imageio-jxl plugin (no options).";
     }
 
 }

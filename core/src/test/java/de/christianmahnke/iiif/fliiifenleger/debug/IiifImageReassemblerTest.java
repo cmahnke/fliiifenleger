@@ -3,14 +3,11 @@
 package de.christianmahnke.iiif.fliiifenleger.debug;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
@@ -60,6 +57,13 @@ class IiifImageReassemblerTest {
         stubTile(server, "1,0,1,1", Color.GREEN);  // Top-right
         stubTile(server, "0,1,1,1", Color.BLUE);   // Bottom-left
         stubTile(server, "1,1,1,1", Color.YELLOW); // Bottom-right
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (server != null) {
+            server.stop();
+        }
     }
 
     private String createTestInfoJson(String baseUrl) {
