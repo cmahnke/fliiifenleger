@@ -441,9 +441,6 @@
       ]
     },
     {
-      "type": "de.christianmahnke.iiif.fliiifenleger.sink.RegionTileEnricher"
-    },
-    {
       "type": "de.christianmahnke.iiif.fliiifenleger.source.DefaultImageSource",
       "methods": [
         {
@@ -1887,9 +1884,6 @@
     },
     {
       "glob": "META-INF/services/de.christianmahnke.iiif.fliiifenleger.sink.ServiceExtension"
-    },
-    {
-      "glob": "META-INF/services/de.christianmahnke.iiif.fliiifenleger.sink.TileEnricher"
     },
     {
       "glob": "META-INF/services/de.christianmahnke.iiif.fliiifenleger.sink.TileSink"
