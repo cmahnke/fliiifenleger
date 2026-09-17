@@ -68,22 +68,24 @@ jobs:
       - name: Build and test
         run: mvn --batch-mode verify
 
-      # Guard: the snapshot deploy must never publish a release version
-      # (main briefly carries one during release prep, or after an
-      # accidental versions:set). Fail fast instead of deploying it.
-      - name: Verify snapshot version
+      # Snapshot deploys must never publish a release version: during
+      # release prep main briefly carries one, and the v* tag build
+      # (release.yml) owns that version — a second deploy would 409.
+      # Skip quietly-but-visibly instead of failing.
+      - name: Check snapshot version
+        id: version-check
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout | tail -1)
           echo "Project version: $VERSION"
           case "$VERSION" in
-            *-SNAPSHOT) ;;
-            *) echo "ERROR: refusing to snapshot-deploy non-SNAPSHOT version '$VERSION'"; exit 1 ;;
+            *-SNAPSHOT) echo "is_snapshot=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::warning::Skipping snapshot deploy for non-SNAPSHOT version '$VERSION' (release builds are handled by release.yml)"; echo "is_snapshot=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
       # Deploy the -SNAPSHOT artifacts to GitHub Packages on pushes to main.
       - name: Deploy snapshot to GitHub Packages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.version-check.outputs.is_snapshot == 'true'
         run: mvn --batch-mode deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
