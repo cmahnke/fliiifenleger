@@ -83,6 +83,16 @@ jobs:
             -DnewVersion=${{ steps.version.outputs.version }} \
             -DgenerateBackupPoms=false
 
+      # Guard: the release deploy must never publish a -SNAPSHOT version
+      # (e.g. from a malformed tag). Fail fast, before the test suite.
+      - name: Verify release version
+        run: |
+          VERSION=$(mvn --batch-mode -q help:evaluate -Dexpression=project.version -DforceStdout | tail -1)
+          echo "Project version: $VERSION"
+          case "$VERSION" in
+            *-SNAPSHOT) echo "ERROR: refusing to release-deploy SNAPSHOT version '$VERSION'"; exit 1 ;;
+          esac
+
       # Release builds must pass the full test suite.
       - name: Run tests
         run: mvn --batch-mode verify
