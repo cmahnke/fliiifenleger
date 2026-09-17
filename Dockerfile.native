@@ -8,7 +8,9 @@
 #   JXL through the bundled jxl-wasm module, so no system libjxl is
 #   installed anywhere;
 # - Chicory is excluded from the image (GraalWasm is the engine);
-# - the final stage is a slim glibc base with just the binary (no JDK).
+# - the binary is built FULLY STATIC (--static) against musl using the
+#   GraalVM -muslib toolchain image, so the final stage can be a bare
+#   Alpine base with just the binary (no JDK, no libc).
 #
 # Build: docker build -f Dockerfile.native -t fliiifenleger:native .
 # Run:   docker run --rm fliiifenleger:native --version
@@ -38,8 +40,10 @@ RUN rustup target add wasm32-wasip1 && \
 # Stage 2: build the GraalVM native binary with Maven.
 # Must stay on GraalVM 25.3.x: the polyglot artifacts pin 25.3.x (see
 # the graalvm.version property in the parent and wasm-runtime poms) and
-# builder/library skew fails the image build.
-FROM ghcr.io/graalvm/native-image-community:25 AS native-builder
+# builder/library skew fails the image build.  The -muslib variant ships
+# the musl toolchain (musl-gcc) plus a static zlib, which the fully-static
+# build links against.
+FROM ghcr.io/graalvm/native-image-community:25i3-muslib-ol9 AS native-builder
 
 # Install a pinned Maven (the image ships no build tools).
 # dlcdn.apache.org only keeps the *latest* release, so a pinned version 404s
@@ -73,12 +77,17 @@ COPY --from=rust-builder /rust-jxl/target/wasm32-wasip1/release/jxl_wasm.wasm \
 
 # -Pnative adds the jxl-wasm module, swaps imageio-jxl/Chicory for
 # polyglot+wasm-community, and runs native-image at the package phase.
-RUN mvn --batch-mode -Pnative package \
+# Inject --static into the copied cli pom (the repo pom stays untouched):
+# the fully-static musl build needs it, and -Dnative.buildArgs would
+# REPLACE the pom's configured args, so editing the copied pom is the
+# cleanest single point of change.
+RUN sed -i 's#</buildArgs>#<buildArg>--static</buildArg>\n            </buildArgs>#' cli/pom.xml && \
+    mvn --batch-mode -Pnative package \
         -Dmaven.cargo.skip=true -Dmaven.rustup.skip=true
 
-# Stage 3: minimal runtime — the self-contained binary plus glibc.
-# No JDK, no libjxl (JXL decodes via the bundled jxl-wasm module).
-FROM debian:bookworm-slim
+# Stage 3: minimal runtime — the self-contained fully-static binary.
+# No JDK, no libc, no libjxl (JXL decodes via the bundled jxl-wasm module).
+FROM alpine:3
 
 LABEL maintainer="cmahnke@gmail.com"
 LABEL org.opencontainers.image.source="https://github.com/cmahnke/fliiifenleger"
