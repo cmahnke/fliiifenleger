@@ -741,10 +741,12 @@ docker run --rm fliiifenleger:native runtime
 
 Like the local `-Pnative` build it needs no JDK and no system `libjxl`
 at runtime (JXL decodes via the bundled `jxl-wasm` module, WASM runs on
-GraalWasm). The binary is built **fully static** against musl (using the
-GraalVM `-muslib` toolchain image), so the final image is a bare
-`alpine:3` with just the binary — no JDK, no libc. The regular
-`Dockerfile` stays JVM-based and remains the default.
+GraalWasm). The binary is linked against **musl** (`-H:UseLibC=musl`,
+built with the GraalVM `-muslib` toolchain image — fully-static
+`--static` fails this Truffle/GraalWasm workload at image init time),
+so the final image is a bare `alpine:3` with just the binary — no JDK,
+no glibc. The regular `Dockerfile` stays JVM-based and remains the
+default.
 
 ## License
 
