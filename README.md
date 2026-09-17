@@ -8,20 +8,19 @@
 
 ## Table of Contents
 
-- Features
-- Architecture
-- Prerequisites
-- Quick Start
-- Building from Source
-- Installation
-- Maven Artifacts
-- Usage
-- Commands and Options
-  - `generate`
-  - `validate`
-  - `info`
-  - `info.json` validation
-- Advanced Usage
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Building from Source](#building-from-source)
+- [Installation](#installation)
+- [Maven Artifacts](#maven-artifacts)
+- [Usage](#usage)
+- [Commands and Options](#commands-and-options)
+- [UltraHDR (gain map) tiling](#ultrahdr-gain-map-tiling)
+- [C2PA Content Credentials](#c2pa-content-credentials)
+- [Advanced Usage](#advanced-usage)
+- [Deployment](#deployment)
+- [License](#license)
 
 ## Quick Start
 
