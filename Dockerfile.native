@@ -8,9 +8,10 @@
 #   JXL through the bundled jxl-wasm module, so no system libjxl is
 #   installed anywhere;
 # - Chicory is excluded from the image (GraalWasm is the engine);
-# - the binary is built FULLY STATIC (--static) against musl using the
-#   GraalVM -muslib toolchain image, so the final stage can be a bare
-#   Alpine base with just the binary (no JDK, no libc).
+# - the binary is linked against musl (-H:UseLibC=musl, fully-static
+#   --static does not work with this Truffle/GraalWasm workload) using
+#   the GraalVM -muslib toolchain image, so the final stage can be a
+#   bare Alpine base with just the binary (no JDK, no glibc).
 #
 # Build: docker build -f Dockerfile.native -t fliiifenleger:native .
 # Run:   docker run --rm fliiifenleger:native --version
@@ -77,16 +78,18 @@ COPY --from=rust-builder /rust-jxl/target/wasm32-wasip1/release/jxl_wasm.wasm \
 
 # -Pnative adds the jxl-wasm module, swaps imageio-jxl/Chicory for
 # polyglot+wasm-community, and runs native-image at the package phase.
-# Inject --static into the copied cli pom (the repo pom stays untouched):
-# the fully-static musl build needs it, and -Dnative.buildArgs would
-# REPLACE the pom's configured args, so editing the copied pom is the
-# cleanest single point of change.
-RUN sed -i 's#</buildArgs>#<buildArg>--static</buildArg>\n            </buildArgs>#' cli/pom.xml && \
+# Inject -H:UseLibC=musl into the copied cli pom (the repo pom stays
+# untouched): the Alpine final stage needs a musl-linked binary, and
+# -Dnative.buildArgs would REPLACE the pom's configured args, so editing
+# the copied pom is the cleanest single point of change.  (Fully-static
+# --static fails this Truffle/GraalWasm workload at image init time, so
+# musl-dynamic it is — Alpine ships musl, no glibc needed.)
+RUN sed -i 's#</buildArgs>#<buildArg>-H:UseLibC=musl</buildArg>\n            </buildArgs>#' cli/pom.xml && \
     mvn --batch-mode -Pnative package \
         -Dmaven.cargo.skip=true -Dmaven.rustup.skip=true
 
-# Stage 3: minimal runtime — the self-contained fully-static binary.
-# No JDK, no libc, no libjxl (JXL decodes via the bundled jxl-wasm module).
+# Stage 3: minimal runtime — the self-contained musl-linked binary.
+# No JDK, no glibc, no libjxl (JXL decodes via the bundled jxl-wasm module).
 FROM alpine:3
 
 LABEL maintainer="cmahnke@gmail.com"
