@@ -10,7 +10,13 @@ crate-type = ["cdylib"]
 [dependencies]
 # Use standard table syntax to avoid TOML inline-table single-line restriction.
 [dependencies.c2pa]
-version          = "0.91.0"
+# Pinned to 0.90.x: 0.91.0 flips `verify.verify_after_sign` to true and
+# restructures the trust settings schema (trust.anchors[]), which breaks the
+# WASM signing path (manifests without an intent fail validation right after
+# signing; the extra validation work also overflows the WASM stack, surfacing
+# as nondeterministic Chicory traps). Adopting 0.91 requires setting a proper
+# builder intent and migrating the trust-anchor settings — see TileSigner.
+version          = "0.90.22"
 default-features = false
 features         = [
     "rust_native_crypto",

@@ -43,8 +43,11 @@ jobs:
           cache: maven
 
       # The jc2pa module compiles the c2pa Rust crate to wasm32-wasip1.
+      # Pinned so reproducible builds match the local toolchain; bump
+      # together with the c2pa MSRV (currently 1.96.0).
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
+          toolchain: 1.99.1
           target: wasm32-wasip1
 
       # Optional: enables the JXL image source tests in the core module.
@@ -203,8 +206,11 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # The jc2pa/jxl-wasm modules compile Rust crates to wasm32-wasip1.
+      # Pinned so reproducible builds match the local toolchain; bump
+      # together with the c2pa MSRV (currently 1.96.0).
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
+          toolchain: 1.99.1
           target: wasm32-wasip1
 
       # Enables the JXL image source tests in the core module.  The
