@@ -24,10 +24,10 @@
             GraalWasm dependencies (cli/pom.xml).  Keep in sync with the
             graalvm.version property in wasm-runtime/pom.xml.
         -->
-        <graalvm.version>25.3.4.1</graalvm.version>
+        <graalvm.version>25.4.4.1.1</graalvm.version>
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.48</lombok.version>
-        <jackson.version>3.2.2</jackson.version>
+        <jackson.version>3.2.3</jackson.version>
         <!-- Silences JEP 471 sun.misc.Unsafe warnings from Lombok's annotation
              processor in forked test JVMs (the Maven JVM itself is covered by
              .mvn/jvm.config). Only exists on JDK 23+, hence requireJavaVersion. -->
@@ -112,7 +112,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.7</version>
+                <version>3.0.8</version>
             </dependency>
 
             <!-- Image IO -->
@@ -131,12 +131,12 @@
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
-                <version>2.0.19</version>
+                <version>2.0.20</version>
             </dependency>
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
-                <version>1.6.3</version>
+                <version>1.6.5</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -166,7 +166,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-javadoc-plugin</artifactId>
-                    <version>3.11.2</version>
+                    <version>3.12.0</version>
                     <configuration>
                         <!-- Match the compiler's bytecode target. -->
                         <release>21</release>

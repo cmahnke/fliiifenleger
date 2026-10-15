@@ -25,7 +25,7 @@
             graalvm.version: must match across polyglot + wasm-community.
             Kept for the OPTIONAL GraalWasm engine.
         -->
-        <graalvm.version>25.3.4.1</graalvm.version>
+        <graalvm.version>25.4.4.1.1</graalvm.version>
     </properties>
 
     <dependencies>

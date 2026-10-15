@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 # Use standard table syntax to avoid TOML inline-table single-line restriction.
 [dependencies.c2pa]
-version          = "0.90.20"
+version          = "0.91.0"
 default-features = false
 features         = [
     "rust_native_crypto",
