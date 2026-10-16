@@ -105,12 +105,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up GraalVM
-        # Must stay on 25.3.x: the polyglot artifacts pin 25.3.x (see the
+        # Must stay on 25.4.x: the polyglot artifacts pin 25.4.x (see the
         # graalvm.version properties) and builder/library skew fails the
         # image build — same pin as release.yml.
         uses: graalvm/setup-graalvm@v1
         with:
-          version: '25.3'
+          version: '25.4'
           distribution: 'graalvm'
           cache: maven
           github-token: ${{ secrets.GITHUB_TOKEN }}

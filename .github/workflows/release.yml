@@ -196,11 +196,11 @@ jobs:
           echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Set up GraalVM
-        # Must stay on 25.3.x: the polyglot artifacts pin 25.3.4.1 and
+        # Must stay on 25.4.x: the polyglot artifacts pin 25.4.4.1.1 and
         # builder/library skew fails the image build (TruffleLocator).
         uses: graalvm/setup-graalvm@v1
         with:
-          version: '25.3'
+          version: '25.4'
           distribution: 'graalvm'
           cache: maven
           github-token: ${{ secrets.GITHUB_TOKEN }}

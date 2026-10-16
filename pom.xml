@@ -351,7 +351,7 @@
                                             target, stable since GraalVM 21.
                                         -->
                                         <requireFilesExist>
-                                            <message>Native builds require a GraalVM JDK (no native-image builder under ${java.home}). Set JAVA_HOME to GraalVM 25.3+ to match the pinned polyglot 25.3.x artifacts — mixing builder and polyglot versions fails the image build.</message>
+                                                <message>Native builds require a GraalVM JDK (no native-image builder under ${java.home}). Set JAVA_HOME to GraalVM 25.4+ to match the pinned polyglot 25.4.x artifacts — mixing builder and polyglot versions fails the image build.</message>
                                             <files>
                                                 <file>${java.home}/lib/svm/bin/native-image</file>
                                             </files>

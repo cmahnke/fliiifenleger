@@ -39,12 +39,12 @@ RUN rustup target add wasm32-wasip1 && \
     cargo build --target wasm32-wasip1 --release
 
 # Stage 2: build the GraalVM native binary with Maven.
-# Must stay on GraalVM 25.3.x: the polyglot artifacts pin 25.3.x (see
+# Must stay on GraalVM 25.4.x: the polyglot artifacts pin 25.4.x (see
 # the graalvm.version property in the parent and wasm-runtime poms) and
 # builder/library skew fails the image build.  The -muslib variant ships
 # the musl toolchain (musl-gcc) plus a static zlib, which the fully-static
 # build links against.
-FROM ghcr.io/graalvm/native-image-community:25i3-muslib-ol9 AS native-builder
+FROM ghcr.io/graalvm/native-image-community:25i4-muslib-ol9 AS native-builder
 
 # Install a pinned Maven (the image ships no build tools).
 # dlcdn.apache.org only keeps the *latest* release, so a pinned version 404s

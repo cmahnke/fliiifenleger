@@ -716,9 +716,9 @@ automatically (checksum + URL); no per-release manual steps.
 
 ### Native binaries
 
-`mvn -Pnative package` (requires GraalVM 25.3+ as the build JDK — the
+`mvn -Pnative package` (requires GraalVM 25.4+ as the build JDK — the
 enforcer fails fast otherwise, and builder/polyglot versions must match
-the pinned 25.3.x artifacts) produces a self-contained `cli/target/fliiifenleger`
+the pinned 25.4.x artifacts) produces a self-contained `cli/target/fliiifenleger`
 binary: no JDK needed at runtime, JXL decodes through the bundled
 `jxl-wasm` module (functional but ~5× slower than the native lib), and
 Chicory is excluded from the image entirely.
