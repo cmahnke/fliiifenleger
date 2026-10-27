@@ -60,7 +60,7 @@
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock</artifactId>
-            <version>4.0.0-beta.40</version>
+            <version>4.0.0-beta.41</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -190,7 +190,7 @@
                     <plugin>
                         <groupId>org.graalvm.buildtools</groupId>
                         <artifactId>native-maven-plugin</artifactId>
-                        <version>1.1.14</version>
+                        <version>1.1.17</version>
                         <extensions>true</extensions>
                         <executions>
                             <execution>
@@ -226,7 +226,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
-                        <version>3.6.0</version>
+                        <version>3.6.1</version>
                         <configuration>
                             <systemPropertyVariables>
                                 <wasm.engine>graalvm</wasm.engine>
