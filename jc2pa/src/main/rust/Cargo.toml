@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 # signing; the extra validation work also overflows the WASM stack, surfacing
 # as nondeterministic Chicory traps). Adopting 0.91 requires setting a proper
 # builder intent and migrating the trust-anchor settings — see TileSigner.
-version          = "0.90.22"
+version          = "0.91.5"
 default-features = false
 features         = [
     "rust_native_crypto",
