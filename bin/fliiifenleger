@@ -1,0 +1,401 @@
+#!/bin/sh
+set -eu
+
+APP_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+CLI_JAR="$APP_ROOT/cli/target/fliiifenleger-cli.jar"
+
+MAVEN_VERSION="${MAVEN_VERSION:-3.10.0}"
+MAVEN_CACHE="${MAVEN_CACHE:-$HOME/.m2/wrapper/dists}"
+
+CERT_DIR="./certs"
+CERT_CN="fliiifenleger-test"
+CERT_ORG="fliiifenleger-test"
+CERT_DAYS="365"
+CERT_FILES="ca-key.pem ca-cert.pem ca-cert.srl ee-sec1.pem key.pem ee.csr ee-ext.cnf ee-cert.pem chain.pem"
+CERT_CHAIN_FILES="ca-key.pem ca-cert.pem key.pem ee-cert.pem chain.pem"
+
+REBUILD=0
+FLII_TMP=
+
+warn() { printf '[fliiifenleger] WARNING: %s\n' "$*" >&2; }
+die()  { printf '[fliiifenleger] ERROR: %s\n' "$*" >&2; exit 1; }
+
+on_exit() {
+    if [ -n "$FLII_TMP" ] && [ -d "$FLII_TMP" ]; then
+        rm -rf "$FLII_TMP"
+    fi
+}
+trap on_exit EXIT
+
+usage() {
+    cat <<HELP
+fliiifenleger bootstrap wrapper
+
+Usage:
+  bin/fliiifenleger [options] <cli command and arguments>
+  bin/fliiifenleger cert [options]
+
+Behavior:
+  * Checks for java (JDK 23+ to build, 21+ to run) and cargo (WASM codecs);
+    warn-only if missing.
+  * Uses Maven from PATH, else downloads the official Apache distribution
+    (SHA-512 verified) into $MAVEN_CACHE
+    (override: MAVEN_VERSION=3.10.0 MAVEN_CACHE=~/.m2/wrapper/dists).
+  * First run builds the CLI jar (mvn package -DskipTests; cargo-less runs
+    fall back to prebuilt .wasm artifacts automatically).
+  * Executes the CLI. Pass-through: everything except 'cert' and
+    '--rebuild' goes to fliiifenleger-cli.
+
+Options:
+  --rebuild            Force a rebuild before exec
+  -h                   Show this help
+
+cert options (throwaway C2PA test chain, EC P-256 CA + end-entity):
+  --out-dir DIR        Output directory (default: ./certs)
+  --cn NAME            Common name (default: $CERT_CN)
+  --org NAME           Organization O attribute (default: $CERT_ORG)
+  --days N             Validity in days (default: $CERT_DAYS)
+  --force              Replace existing key/cert files in the output dir
+Requires openssl (or LibreSSL); override with OPENSSL_BIN=/path/to/openssl
+HELP
+}
+
+fetch() {
+    url="$1"
+    out="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 3 -o "$out" "$url" 1>&2
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$out" "$url" 1>&2
+    else
+        die "neither curl nor wget is available to download $url"
+    fi
+}
+
+data_sha512() {
+    input="$1"
+    if command -v sha512sum >/dev/null 2>&1; then
+        sha512sum "$input" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 512 "$input" | awk '{print $1}'
+    else
+        die "no sha512 utility (sha512sum, shasum) found to verify the Maven download"
+    fi
+}
+
+download_and_install_maven() {
+    version="$MAVEN_VERSION"
+    target="$MAVEN_CACHE/apache-maven-$version-bin/$version"
+    if [ -x "$target/bin/mvn" ]; then
+        printf '%s\n' "$target/bin/mvn"
+        return 0
+    fi
+    echo '[fliiifenleger] downloading Apache Maven '"$version"' ...' 1>&2
+    FLII_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fliiifenleger-maven.XXXXXX")
+    tarball="$FLII_TMP/maven.tar.gz"
+    sums="$FLII_TMP/maven.sha512"
+    ok=0
+    for base in \
+        "https://dlcdn.apache.org/maven/maven-3/$version/binaries" \
+        "https://archive.apache.org/dist/maven/maven-3/$version/binaries"
+    do
+        if fetch "$base/apache-maven-$version-bin.tar.gz" "$tarball" \
+           && fetch "$base/apache-maven-$version-bin.tar.gz.sha512" "$sums"; then
+            ok=1
+            break
+        fi
+    done
+    [ "$ok" -eq 1 ] || die "could not download Apache Maven $version (checked dlcdn and archive); set MAVEN_VERSION accordingly"
+    expected=$(awk '{print $1}' "$sums")
+    actual=$(data_sha512 "$tarball")
+    [ "$expected" = "$actual" ] || die "SHA-512 mismatch for apache-maven-$version-bin.tar.gz (expected $expected, got $actual)"
+    mkdir -p "$(dirname -- "$target")"
+    rm -rf "$target"
+    tar -xzf "$tarball" -C "$FLII_TMP"
+    mv "$FLII_TMP/apache-maven-$version" "$target"
+    printf '[fliiifenleger] Maven installed: %s\n' "$target/bin/mvn" 1>&2
+    printf '%s\n' "$target/bin/mvn"
+}
+
+find_java() {
+    if ! command -v java >/dev/null 2>&1; then
+        warn "java not found on PATH; JDK 23+ is required to build, Java 21+ to run"
+        return 1
+    fi
+    line=$(java -version 2>&1 | sed -n '1p') || true
+    ver=$(printf '%s' "$line" | sed -n 's/.*version "\([^"]*\)".*/\1/p')
+    if [ -n "$ver" ]; then
+        major=$(printf '%s' "$ver" | sed 's/^\([0-9][0-9]*\).*/\1/')
+        if [ -n "$major" ] && [ "$major" -lt 21 ]; then
+            warn "java version $ver is older than 21; the CLI requires Java 21+"
+        elif [ -n "$major" ] && [ "$major" -lt 23 ] && { [ ! -f "$CLI_JAR" ] || [ "$REBUILD" -eq 1 ]; }; then
+            warn "java $ver cannot build this project (enforcer requires JDK 23+ because of .mvn/jvm.config); running a prebuilt jar still works with 21+"
+        fi
+    else
+        warn "could not determine the java version; build needs JDK 23+, run needs 21+"
+    fi
+    return 0
+}
+
+find_cargo() {
+    if command -v cargo >/dev/null 2>&1; then
+        return 0
+    fi
+    warn "cargo not found on PATH; Rust is required to compile the WASM codecs (jc2pa, ultrahdr); install via https://rustup.rs"
+    return 1
+}
+
+find_openssl() {
+    if [ -n "${OPENSSL_BIN:-}" ]; then
+        [ -x "$OPENSSL_BIN" ] || die "OPENSSL_BIN=$OPENSSL_BIN is not executable"
+        printf '%s\n' "$OPENSSL_BIN"
+        return 0
+    fi
+    fallback=""
+    for cand in \
+        "$(command -v openssl 2>/dev/null || true)" \
+        /opt/homebrew/opt/openssl@3/bin/openssl \
+        /usr/local/opt/openssl@3/bin/openssl \
+        /usr/bin/openssl
+    do
+        case "$cand" in
+            ''|[!/]*) continue ;;
+        esac
+        [ -x "$cand" ] || continue
+        if has_addext "$cand"; then
+            printf '%s\n' "$cand"
+            return 0
+        fi
+        [ -n "$fallback" ] || fallback="$cand"
+    done
+    if [ -n "$fallback" ]; then
+        printf '%s\n' "$fallback"
+        return 0
+    fi
+    return 1
+}
+
+has_addext() {
+    "$1" req -help 2>&1 | grep -q -- -addext
+}
+
+do_cert() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --out-dir)
+                [ "$#" -ge 2 ] || die "--out-dir requires a value"
+                CERT_DIR="$2"
+                shift 2
+                ;;
+            --out-dir=*)
+                CERT_DIR="${1#*=}"
+                shift
+                ;;
+            --cn)
+                [ "$#" -ge 2 ] || die "--cn requires a value"
+                CERT_CN="$2"
+                shift 2
+                ;;
+            --cn=*)
+                CERT_CN="${1#*=}"
+                shift
+                ;;
+            --org)
+                [ "$#" -ge 2 ] || die "--org requires a value"
+                CERT_ORG="$2"
+                shift 2
+                ;;
+            --org=*)
+                CERT_ORG="${1#*=}"
+                shift
+                ;;
+            --days)
+                [ "$#" -ge 2 ] || die "--days requires a value"
+                CERT_DAYS="$2"
+                shift 2
+                ;;
+            --days=*)
+                CERT_DAYS="${1#*=}"
+                shift
+                ;;
+            --force)
+                FORCE_CERT=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                die "unknown cert option: $1 (try --help)"
+                ;;
+        esac
+    done
+
+    case "$CERT_DAYS" in
+        *[!0-9]*|'') die "--days must be a number (got '$CERT_DAYS')" ;;
+    esac
+
+    if [ -e "$CERT_DIR/ca-cert.pem" ] || [ -e "$CERT_DIR/key.pem" ]; then
+        if [ "${FORCE_CERT:-0}" != "1" ]; then
+            die "$CERT_DIR already contains ca-cert.pem/key.pem; refusing to overwrite (use --force)"
+        fi
+        for f in $CERT_FILES; do
+            rm -f "$CERT_DIR/$f"
+        done
+    fi
+    mkdir -p "$CERT_DIR"
+
+    openssl_bin=$(find_openssl) || die "openssl is required to create the C2PA chain; install it (brew install openssl@3 / apt-get install openssl) or set OPENSSL_BIN"
+    echo "[fliiifenleger] using openssl: $openssl_bin"
+    echo "[fliiifenleger] creating C2PA test chain in $CERT_DIR"
+
+    ca_key="$CERT_DIR/ca-key.pem"
+    ca_cert="$CERT_DIR/ca-cert.pem"
+    ee_sec1="$CERT_DIR/ee-sec1.pem"
+    ee_key="$CERT_DIR/key.pem"
+    ee_csr="$CERT_DIR/ee.csr"
+    ext_file="$CERT_DIR/ee-ext.cnf"
+    ee_cert="$CERT_DIR/ee-cert.pem"
+    chain="$CERT_DIR/chain.pem"
+
+    printf '%s\n' \
+        "basicConstraints=critical,CA:false" \
+        "keyUsage=critical,digitalSignature" \
+        "extendedKeyUsage=emailProtection" \
+        "subjectKeyIdentifier=hash" \
+        "authorityKeyIdentifier=keyid,issuer" > "$ext_file"
+
+    if has_addext "$openssl_bin"; then
+        "$openssl_bin" ecparam -name prime256v1 -genkey -noout -out "$ca_key"
+        "$openssl_bin" req -x509 -new -nodes -key "$ca_key" -sha256 -days "$CERT_DAYS" \
+            -subj "/CN=$CERT_CN-ca/O=$CERT_ORG" \
+            -addext "basicConstraints=critical,CA:true" \
+            -addext "keyUsage=critical,keyCertSign,digitalSignature,cRLSign" \
+            -addext "subjectKeyIdentifier=hash" \
+            -addext "authorityKeyIdentifier=keyid:always" \
+            -out "$ca_cert"
+    else
+        warn "$openssl_bin does not support -addext; using a config-file fallback"
+        FLII_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fliiifenleger-cert.XXXXXX")
+        ca_cnf="$FLII_TMP/ca.cnf"
+        {
+            printf '%s\n' \
+                "[ req ]" \
+                "distinguished_name = dn" \
+                "prompt = no" \
+                "x509_extensions = v3_ca" \
+                "[ dn ]" \
+                "CN = $CERT_CN-ca" \
+                "O = $CERT_ORG" \
+                "[ v3_ca ]" \
+                "basicConstraints = critical,CA:true" \
+                "keyUsage = critical,keyCertSign,digitalSignature,cRLSign" \
+                "subjectKeyIdentifier = hash" \
+                "authorityKeyIdentifier = keyid:always"
+        } > "$ca_cnf"
+        "$openssl_bin" ecparam -name prime256v1 -genkey -noout -out "$ca_key"
+        "$openssl_bin" req -x509 -new -nodes -key "$ca_key" -sha256 -days "$CERT_DAYS" \
+            -config "$ca_cnf" -extensions v3_ca -out "$ca_cert"
+    fi
+
+    "$openssl_bin" ecparam -name prime256v1 -genkey -noout -out "$ee_sec1"
+    "$openssl_bin" pkcs8 -topk8 -nocrypt -in "$ee_sec1" -out "$ee_key"
+    "$openssl_bin" req -new -key "$ee_key" -subj "/CN=$CERT_CN/O=$CERT_ORG" -out "$ee_csr"
+    "$openssl_bin" x509 -req -in "$ee_csr" \
+        -CA "$ca_cert" -CAkey "$ca_key" -CAcreateserial \
+        -days "$CERT_DAYS" -sha256 -extfile "$ext_file" -out "$ee_cert"
+
+    cat "$ee_cert" "$ca_cert" > "$chain"
+
+    if ! "$openssl_bin" verify -CAfile "$ca_cert" "$ee_cert" >/dev/null 2>&1; then
+        die "generated chain does not verify; openssl reported an error"
+    fi
+
+    cat <<NEXT
+
+Throwaway C2PA test chain created in $CERT_DIR
+  CA key/cert:   $CERT_DIR/ca-key.pem  $CERT_DIR/ca-cert.pem
+  Signing key:   $CERT_DIR/key.pem (PKCS#8) + $CERT_DIR/ee-cert.pem
+  Chain bundle:  $CERT_DIR/chain.pem (end-entity first; also usable as trustAnchor)
+
+Sign tiles with your own chain (test use only; not valid against the C2PA trust list):
+  bin/fliiifenleger generate --sink c2pa \\
+    --sink-opt cert=$CERT_DIR/chain.pem --sink-opt key=$CERT_DIR/key.pem \\
+    --sink-opt alg=es256 \\
+    -o ./signed-iiif /path/to/image.jpg
+
+Validate against your anchor:
+  bin/fliiifenleger validate --check-c2pa --trust-anchor $CERT_DIR/chain.pem \\
+    -o reassembled.jpg <info.json-url>
+NEXT
+}
+
+maybe_build() {
+    if [ -f "$CLI_JAR" ] && [ "$REBUILD" -ne 1 ]; then
+        return 0
+    fi
+    rust_flags=""
+    if ! find_cargo; then
+        if [ ! -f "$APP_ROOT/jc2pa/src/main/resources/wasm/c2pa_wasm.wasm" ] \
+           || [ ! -f "$APP_ROOT/ultrahdr/src/main/resources/wasm/ultrahdr_wasm.wasm" ]; then
+            die "cargo is missing and no prebuilt WASM artifacts are present; install Rust (https://rustup.rs, target wasm32-wasip1) or provide c2pa_wasm.wasm/ultrahdr_wasm.wasm"
+        fi
+        warn "building without cargo; using the prebuilt .wasm artifacts already in the sources"
+        rust_flags="-Dmaven.cargo.skip=true -Dmaven.rustup.skip=true"
+    elif ! command -v rustup >/dev/null 2>&1; then
+        warn "rustup not found on PATH; building anyway, add the wasm32-wasip1 target on your own"
+        rust_flags="-Dmaven.rustup.skip=true"
+    fi
+    echo "[fliiifenleger] building with $MVN ..."
+    "$MVN" -f "$APP_ROOT/pom.xml" package -DskipTests $rust_flags
+}
+
+run_cli() {
+    if command -v java >/dev/null 2>&1; then
+        java_bin="java"
+    elif [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+        java_bin="$JAVA_HOME/bin/java"
+    else
+        die "java is not on PATH (and JAVA_HOME is not set); cannot execute $CLI_JAR (JDK 21+ required)"
+    fi
+    exec "$java_bin" --enable-native-access=ALL-UNNAMED -jar "$CLI_JAR" "$@"
+}
+
+main_with_cli_args() {
+    find_java
+    find_cargo
+    if [ ! -f "$CLI_JAR" ] || [ "$REBUILD" -eq 1 ]; then
+        if command -v mvn >/dev/null 2>&1; then
+            MVN=$(command -v mvn)
+        else
+            MVN=$(download_and_install_maven)
+        fi
+        maybe_build
+    fi
+    run_cli "$@"
+}
+
+case "${1:-}" in
+    cert)
+        shift
+        do_cert "$@"
+        exit 0
+        ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    --rebuild)
+        REBUILD=1
+        shift
+        main_with_cli_args "$@"
+        ;;
+    "")
+        usage
+        exit 0
+        ;;
+    *)
+        main_with_cli_args "$@"
+        ;;
+esac
