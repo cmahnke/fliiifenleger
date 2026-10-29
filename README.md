@@ -13,6 +13,7 @@
 - [Prerequisites](#prerequisites)
 - [Building from Source](#building-from-source)
 - [Installation](#installation)
+- [Bootstrap wrapper (bin/fliiifenleger)](#bootstrap-wrapper-binfliiifenleger)
 - [Maven Artifacts](#maven-artifacts)
 - [Usage](#usage)
 - [Commands and Options](#commands-and-options)
@@ -29,16 +30,24 @@
 git clone https://github.com/cmahnke/fliiifenleger.git
 cd fliiifenleger
 
-# Build everything (needs JDK 23+, Maven 3.x and a Rust toolchain for the
-# WASM codecs; use -DskipTests for a faster build without tests).
-mvn clean package -DskipTests
-
-# Tile a sample image (IIIF Image API 2 by default, info.json validated).
-java -jar cli/target/fliiifenleger-cli.jar generate --validate-info \
+# Bootstrap wrapper: checks Java/Rust (warn-only), downloads Maven if
+# missing, builds the CLI jar on first run, then runs the CLI (IIIF Image
+# API 2 by default, info.json validated).
+bin/fliiifenleger generate --validate-info \
   -o ./my-iiif-images /path/to/image.jpg
 
 # Inspect the generated Image API description.
 cat ./my-iiif-images/info.json
+```
+
+Prefer the plain toolchain? Manual build (needs JDK 23+, Maven 3.x and a
+Rust toolchain for the WASM codecs; use `-DskipTests` for a faster build
+without tests):
+
+```sh
+mvn clean package -DskipTests
+java -jar cli/target/fliiifenleger-cli.jar generate --validate-info \
+  -o ./my-iiif-images /path/to/image.jpg
 ```
 
 Next steps: try `--iiif-version V3`, the `ultrahdr` / `c2pa` sinks below,
@@ -112,6 +121,72 @@ For convenience, you can create an alias or a shell script to make it easier to 
 **Example alias for `.bashrc` or `.zshrc`:**
 ```sh
 alias fliiifenleger='java -jar cli/target/fliiifenleger-cli.jar'
+```
+
+### Bootstrap wrapper (`bin/fliiifenleger`)
+
+The checked-in wrapper script `bin/fliiifenleger` gets a working CLI from a
+fresh clone with as few moving parts as possible. On every invocation it
+first looks at the toolchain:
+
+*   **Java** — warn-only if missing or too old. Building needs JDK 23+ (the
+    enforcer fails without it, because `.mvn/jvm.config` relies on
+    `--sun-misc-unsafe-memory-access`); running a prebuilt jar needs Java
+    21+. `JAVA_HOME` is honored when no `java` is on the `PATH`.
+*   **Rust / cargo** — warn-only if missing; it is only needed to compile
+    the WASM codecs (`jc2pa`, `ultrahdr`). Builds without cargo fall back
+    to the prebuilt `.wasm` artifacts in the sources
+    (`-Dmaven.cargo.skip=true -Dmaven.rustup.skip=true`); the wrapper only
+    fails hard when a build is due and no prebuilt artifacts are present.
+*   **Maven** — the first `mvn` on the `PATH` wins; otherwise the official
+    Apache distribution is downloaded (tarball, SHA-512 verified;
+    `dlcdn.apache.org` first, `archive.apache.org` as fallback for older,
+    no-longer-current versions) and unpacked into
+    `~/.m2/wrapper/dists/apache-maven-<ver>-bin/<ver>/`.
+
+If `cli/target/fliiifenleger-cli.jar` is missing (or `--rebuild` is given)
+the wrapper runs `mvn package -DskipTests` — deliberately without `clean`,
+so the WASM codecs are not recompiled on every invocation — and then
+executes the CLI with `--enable-native-access=ALL-UNNAMED` (required for
+the JXL imageio plugin's FFM usage, and by the `jxl` source). Everything
+except `cert` and `--rebuild` is passed through verbatim, so the CLI's own
+subcommand help works as usual (`bin/fliiifenleger generate -h`); the
+wrapper's own `-h` help explains bootstrap behavior and the `cert`
+subcommand.
+
+Environment overrides: `MAVEN_VERSION` (default `3.10.0` — dlcdn serves
+only current releases, so pinning an older version automatically uses the
+archive URL), `MAVEN_CACHE` (default `~/.m2/wrapper/dists`), `OPENSSL_BIN`
+and `JAVA_HOME`.
+
+#### The `cert` subcommand
+
+`bin/fliiifenleger cert` generates the throwaway C2PA test chain documented
+[below](#signing-with-your-own-certificate) — a self-signed EC P-256 CA
+plus an end-entity certificate with a PKCS#8 key, chained in `chain.pem`
+(end-entity first; also usable as a trust-anchor bundle):
+
+```sh
+bin/fliiifenleger cert --out-dir certs [--cn NAME] [--org NAME] [--days N] [--force]
+```
+
+*   Requires `openssl` (or LibreSSL); override the binary with `OPENSSL_BIN`.
+*   Output defaults to `./certs` (change with `--out-dir`); existing
+    `ca-cert.pem`/`key.pem` refuse to be overwritten without `--force`.
+*   The chain is **test-only**: it validates structurally, but not against
+    the [C2PA trust list](https://opensource.contentauthenticity.org/docs/conformance/trust-lists).
+
+Feed it straight into signing and validation (see
+[Signing with your own certificate](#signing-with-your-own-certificate)):
+
+```sh
+bin/fliiifenleger generate --sink c2pa \
+  --sink-opt cert=certs/chain.pem --sink-opt key=certs/key.pem \
+  --sink-opt alg=es256 \
+  -o ./signed-iiif /path/to/image.jpg
+
+bin/fliiifenleger validate --check-c2pa --trust-anchor certs/chain.pem \
+  -o reassembled.jpg https://example.com/iiif/2/my-image/info.json
 ```
 
 ## Maven Artifacts
@@ -431,6 +506,11 @@ certificate chain and private key, and validate against the
 [C2PA trust list](https://opensource.contentauthenticity.org/docs/conformance/trust-lists).
 
 ### Signing with your own certificate
+
+The wrapper's `cert` subcommand ([Bootstrap wrapper](#bootstrap-wrapper-binfliiifenleger))
+creates exactly this throwaway chain — `certs/chain.pem` + `certs/key.pem`
+with a single command. The manual openssl recipe below documents the same
+steps for reference.
 
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar generate \
