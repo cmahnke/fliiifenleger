@@ -50,8 +50,10 @@ java -jar cli/target/fliiifenleger-cli.jar generate --validate-info \
   -o ./my-iiif-images /path/to/image.jpg
 ```
 
-Next steps: try `--iiif-version V3`, the `ultrahdr` / `c2pa` sinks below,
-or point `validate` at a served endpoint (see Commands and Options).
+Next steps: try `--iiif-version V3`, the `ultrahdr` / `c2pa` sinks below
+(one command each via the wrapper: `bin/fliiifenleger ultrahdr` /
+`bin/fliiifenleger c2pa`), or point `validate` at a served endpoint (see
+Commands and Options).
 
 ## Architecture
 
@@ -149,10 +151,11 @@ the wrapper runs `mvn package -DskipTests` — deliberately without `clean`,
 so the WASM codecs are not recompiled on every invocation — and then
 executes the CLI with `--enable-native-access=ALL-UNNAMED` (required for
 the JXL imageio plugin's FFM usage, and by the `jxl` source). Everything
-except `cert` and `--rebuild` is passed through verbatim, so the CLI's own
+except `cert`, the sink shortcut subcommands (`default`, `ultrahdr`,
+`c2pa`) and `--rebuild` is passed through verbatim, so the CLI's own
 subcommand help works as usual (`bin/fliiifenleger generate -h`); the
-wrapper's own `-h` help explains bootstrap behavior and the `cert`
-subcommand.
+wrapper's own `-h` help explains bootstrap behavior and the wrapper's own
+subcommands.
 
 Environment overrides: `MAVEN_VERSION` (default `3.10.0` — dlcdn serves
 only current releases, so pinning an older version automatically uses the
@@ -180,13 +183,64 @@ Feed it straight into signing and validation (see
 [Signing with your own certificate](#signing-with-your-own-certificate)):
 
 ```sh
-bin/fliiifenleger generate --sink c2pa \
+bin/fliiifenleger generate --iiif-version V3 --sink c2pa \
   --sink-opt cert=certs/chain.pem --sink-opt key=certs/key.pem \
   --sink-opt alg=es256 \
   -o ./signed-iiif /path/to/image.jpg
 
 bin/fliiifenleger validate --check-c2pa --trust-anchor certs/chain.pem \
   -o reassembled.jpg https://example.com/iiif/2/my-image/info.json
+```
+
+#### Sink shortcut subcommands
+
+The wrapper offers one shortcut subcommand per image sink — each is a thin
+preset of `generate --sink <name>`:
+
+| Command | Equivalent |
+|---|---|
+| `bin/fliiifenleger default <args…>` | `generate --sink default <args…>` |
+| `bin/fliiifenleger ultrahdr <args…>` | `generate --sink ultrahdr <args…>` |
+| `bin/fliiifenleger c2pa [options] <args…>` | `generate --sink c2pa <args…>` with the throwaway test chain wired in |
+
+All remaining arguments are forwarded to `generate` verbatim (`-o OUTDIR`,
+`--iiif-version`, `--sink-opt k=v`, …); a forwarded `--sink` is rejected,
+because the subcommand already makes that choice. Note that `ultrahdr`
+selects the **sink** here — the HDR *source* stays `--source ultrahdr`.
+
+`c2pa` additionally manages the [throwaway test
+chain](#the-cert-subcommand):
+
+```sh
+bin/fliiifenleger c2pa [--out-dir certs] [--force] [--create-ca] \
+  -o ./signed-iiif /path/to/image.jpg
+```
+
+*   If `certs/` already holds a complete chain it is **reused with a
+    warning**; `--force` wipes and regenerates it. An incomplete chain
+    aborts until it is regenerated with `--force` (or `cert --force`).
+*   `--create-ca` is accepted as the explicit form of the same behavior —
+    the chain is always ensured before generation.
+*   Forwarded `cert=`/`key=`/`alg=` sink options are rejected: the command
+    binds the chain itself. For full control (real credentials, `tsa`,
+    or ephemeral signing without any chain) use plain
+    `generate --sink c2pa` — without `cert`/`key` it signs with an
+    ephemeral self-signed certificate (see
+    [C2PA Content Credentials](#c2pa-content-credentials)).
+*   Generation always uses IIIF Image API 3 (`--iiif-version V3` is
+    injected unless given): the throwaway chain is a custom trust anchor,
+    which can only be advertised as the namespaced `c2pa:trustAnchor`
+    property of a V3 `info.json`. A forwarded `--iiif-version V2` is
+    rejected; advertise the chain with
+    `--sink-opt trust-anchor=<absolute URI>` so clients can verify the
+    tiles.
+*   Requires `openssl` only when the chain actually has to be created.
+
+Validate the result against the generated anchor:
+
+```sh
+bin/fliiifenleger validate --check-c2pa --trust-anchor certs/chain.pem \
+  -o reassembled.jpg <info.json-url>
 ```
 
 ## Maven Artifacts
@@ -394,6 +448,14 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
   -o ./hdr-iiif /path/to/ultrahdr.jpg
 ```
 
+The wrapper's `ultrahdr` subcommand is shorthand for the same invocation:
+
+```sh
+bin/fliiifenleger ultrahdr \
+  --sink-opt quality=90 --sink-opt gainmap-quality=85 \
+  -o ./hdr-iiif /path/to/ultrahdr.jpg
+```
+
 * `--source ultrahdr` splits the source into primary image, gain map and
   metadata, exposed as an `HdrFrame` carrying the gain map at its native
   (subsampled) resolution; plain JPEGs without a gain map are handled like
@@ -475,6 +537,11 @@ java -jar cli/target/fliiifenleger-cli.jar generate \
   -o ./signed-iiif /path/to/image.jpg
 ```
 
+The wrapper's `c2pa` subcommand is the one-command form: it ensures the
+[throwaway test chain](#the-cert-subcommand) — creating it on first use,
+reusing it afterwards — and signs every tile against it (see
+[Sink shortcut subcommands](#sink-shortcut-subcommands)).
+
 The `c2pa` sink wraps the `default` sink and signs every tile with a
 per-tile manifest that contains the tile's region in source-image
 coordinates (`org.projektemacher.iiif.region` assertion).
@@ -486,7 +553,7 @@ coordinates (`org.projektemacher.iiif.region` assertion).
 | `delegate` | Name of the delegate sink that renders the tiles. | `default` |
 | `format` | Tile format. | `jpg` |
 | `runtime` | WASM engine: `auto`, `chicory` (pure-JVM, works everywhere), or `graalvm` (requires the GraalVM polyglot artifacts). | `auto` |
-| `cert` / `key` | PEM certificate chain and private key files for real signatures. Both must be given together. | – |
+| `cert` / `key` | PEM certificate chain and private key files for real signatures. Both must be given together. **Requires `--iiif-version V3`** when the chain anchors in a custom CA — generation fails fast with Image API 2, because the custom trust anchor can only be advertised as the namespaced `c2pa:trustAnchor` property of a V3 `info.json`. | – |
 | `alg` | Signing algorithm (`es256`, `ps256`, `ed25519`, …). | `es256` |
 | `tsa` | Timestamp authority URL (only with `cert`/`key`). | – |
 | `cert-name` | Common name for the ephemeral test certificate (only without `cert`/`key`). | `fliiifenleger` |
@@ -497,7 +564,8 @@ coordinates (`org.projektemacher.iiif.region` assertion).
 Every `c2pa` run advertises `https://christianmahnke.de/iiif/c2pa/` in
 `info.json`: a `service` entry (plus `extraFeatures` entry and prepended
 JSON-LD context) for Image API 3, or an entry in the embedded profile
-`supports` list for Image API 2 (only without `trust-anchor`).
+`supports` list for Image API 2 (ephemeral signing only — `trust-anchor`
+and custom-CA signing both require Image API 3).
 
 Without `cert`/`key`, tiles are signed with an **ephemeral self-signed
 certificate** — useful for tests and demos, but the manifests will not
@@ -509,17 +577,32 @@ certificate chain and private key, and validate against the
 
 The wrapper's `cert` subcommand ([Bootstrap wrapper](#bootstrap-wrapper-binfliiifenleger))
 creates exactly this throwaway chain — `certs/chain.pem` + `certs/key.pem`
-with a single command. The manual openssl recipe below documents the same
-steps for reference.
+with a single command, and the `c2pa` shortcut subcommand goes one step
+further by wiring the chain into generation automatically (see
+[Sink shortcut subcommands](#sink-shortcut-subcommands)). The manual
+openssl recipe below documents the same steps for reference.
 
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar generate \
+  --iiif-version V3 \
   --sink c2pa \
   --sink-opt cert=chain.pem \
   --sink-opt key=key.pem \
   --sink-opt alg=es256 \
+  --sink-opt trust-anchor=https://example.org/certs/chain.pem \
   -o ./signed-iiif /path/to/image.jpg
 ```
+
+Signing with your own chain produces manifests that validate only against
+your custom trust anchor, so the anchor has to be advertised:
+`--sink-opt trust-anchor=<absolute URI>` (serving the chain, for example)
+writes it as the namespaced `c2pa:trustAnchor` property of the C2PA
+service entry — which only an Image API 3 `info.json` can express.
+Generation therefore **fails fast with Image API 2 when `cert`/`key` are
+configured** (or a `trust-anchor` is given); under Image API 3 a missing
+`trust-anchor` URI logs a warning (credentials from a CA on the
+[C2PA trust list](https://opensource.contentauthenticity.org/docs/conformance/trust-lists)
+need no advertised anchor).
 
 Requirements for `cert` / `key` (checked at signing time — a mismatch
 fails with `the certificate is invalid`):

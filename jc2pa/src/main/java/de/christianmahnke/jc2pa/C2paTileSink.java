@@ -46,19 +46,25 @@ import java.util.Map;
  *       base class).</li>
  *   <li>{@code runtime} — WASM engine selection: {@code auto} (default),
  *       {@code chicory}, or {@code graalvm}.</li>
- *   <li>{@code cert} / {@code key} — paths to PEM certificate chain and
- *       private key files.  When both are set, tiles are signed with real
- *       key material ({@code alg} selects the algorithm, default
- *       {@code es256}; optional {@code tsa} timestamp authority URL).</li>
+    *   <li>{@code cert} / {@code key} — paths to PEM certificate chain and
+    *       private key files.  When both are set, tiles are signed with real
+    *       key material ({@code alg} selects the algorithm, default
+    *       {@code es256}; optional {@code tsa} timestamp authority URL).
+    *       Custom-CA signing requires Image API 3: generation fails with
+    *       Image API 2, because the custom trust anchor can only be
+    *       advertised as the namespaced {@code c2pa:trustAnchor} property of
+    *       a V3 {@code info.json}; under Image API 3 a missing
+    *       {@code trust-anchor} URI logs a warning.</li>
  *   <li>{@code cert-name} — common name for the ephemeral certificate used
  *       when no {@code cert}/{@code key} is given (default:
  *       {@code fliiifenleger}).  Ephemeral signatures are for testing only.</li>
  *   <li>{@code claim-generator} — claim generator string written into the
  *       manifest.</li>
-  *   <li>{@code trust-anchor} — absolute URI advertised as {@code trustAnchor}
-  *       in the {@code https://christianmahnke.de/iiif/c2pa/} service entry of
-  *       a V3 {@code info.json}. Requires {@code --iiif-version V3}; fails with
-  *       Image API 2 since V2 offers no place for namespaced options.</li>
+    *   <li>{@code trust-anchor} — absolute URI advertised as {@code trustAnchor}
+    *       in the {@code https://christianmahnke.de/iiif/c2pa/} service entry of
+    *       a V3 {@code info.json}. Requires {@code --iiif-version V3}; fails with
+    *       Image API 2 since V2 offers no place for namespaced options.
+    *       Recommended whenever {@code cert}/{@code key} sign with a custom CA.</li>
   *   <li>{@code threads} — parallel signing lanes (default: one per available
   *       processor capped at 4; {@code 1} selects serial execution). Each lane pairs one
   *       interpreter instance with its own thread;
@@ -176,10 +182,10 @@ public class C2paTileSink extends AbstractDelegatingTileSink implements AutoClos
                 "WASM engine selection: auto, chicory, or graalvm.",
                 "auto"));
         options.add(OptionDescriptor.optional("cert",
-                "Path to PEM certificate chain file (requires 'key' for real signatures).",
+                "Path to PEM certificate chain file (requires 'key'; custom-CA signing requires IIIF Image API 3).",
                 "", "path"));
         options.add(OptionDescriptor.optional("key",
-                "Path to PEM private key file (requires 'cert' for real signatures).",
+                "Path to PEM private key file (requires 'cert'; custom-CA signing requires IIIF Image API 3).",
                 "", "path"));
         options.add(OptionDescriptor.optional("alg",
                 "Signing algorithm for real key material.",
@@ -194,7 +200,7 @@ public class C2paTileSink extends AbstractDelegatingTileSink implements AutoClos
                 "Claim generator string written into the manifest.",
                 "fliiifenleger"));
         options.add(OptionDescriptor.optional("trust-anchor",
-                "Absolute URI advertised as trustAnchor in a V3 info.json service entry (requires IIIF Image API 3).",
+                "Absolute URI advertised as trustAnchor in a V3 info.json service entry (requires IIIF Image API 3; recommended with custom-CA signing).",
                 "", "uri"));
         options.add(OptionDescriptor.optional("threads",
                 "Parallel signing lanes; 1 selects serial execution (default: one per core capped at 4, -Dwasm.lanes=N sets the default).",
@@ -210,19 +216,35 @@ public class C2paTileSink extends AbstractDelegatingTileSink implements AutoClos
      *   <li>V3: prepends {@link #C2PA_CONTEXT_URI} to {@code @context},
      *       adds a {@code service} entry and an {@code extraFeatures} entry.
      *       When {@code trust-anchor} is set, it is written as the namespaced
-     *       {@code trustAnchor} property of that service entry.</li>
+     *       {@code trustAnchor} property of that service entry. Custom-CA
+     *       signing ({@code cert}/{@code key}) without a {@code trust-anchor}
+     *       URI logs a warning: the tiles are signed with a custom CA whose
+     *       trust anchor is not advertised, so clients cannot verify them
+     *       (credentials from a CA on the C2PA trust list need no anchor).</li>
      *   <li>V2: adds the profile URI to the embedded profile {@code supports}
      *       list. A {@code trust-anchor} cannot be expressed (fixed
      *       {@code @context}, no place for namespaced properties) and fails
-     *       with {@link IllegalArgumentException}.</li>
+     *       with {@link IllegalArgumentException} — as does custom-CA signing
+     *       ({@code cert}/{@code key}), whose trust anchor can only be
+     *       advertised in a V3 info.json.</li>
      * </ul>
      */
     @Override
     public InfoExtension getInfoJsonExtension(ImageInfo.IIIFVersion version) {
-        if (version == ImageInfo.IIIFVersion.V2 && trustAnchor != null) {
-            throw new IllegalArgumentException(
-                "C2PA 'trust-anchor' requires IIIF Image API 3: Image API 2 has no way "
-                + "to express namespaced info.json options (fixed @context).");
+        if (version == ImageInfo.IIIFVersion.V2) {
+            if (trustAnchor != null) {
+                throw new IllegalArgumentException(
+                    "C2PA 'trust-anchor' requires IIIF Image API 3: Image API 2 has no way "
+                    + "to express namespaced info.json options (fixed @context).");
+            }
+            if (signsWithCustomCa()) {
+                throw new IllegalArgumentException(
+                    "C2PA signing with a custom CA requires IIIF Image API 3: the signing "
+                    + "chain's trust anchor can only be advertised as the namespaced "
+                    + "'c2pa:trustAnchor' property of the C2PA service entry in a V3 "
+                    + "info.json (Image API 2 has a fixed @context). Use --iiif-version V3 "
+                    + "and set --sink-opt trust-anchor=<absolute URI>.");
+            }
         }
         java.util.Map<String, Object> service = new java.util.LinkedHashMap<>();
         service.put("id", C2PA_PROFILE_URI);
@@ -232,6 +254,12 @@ public class C2paTileSink extends AbstractDelegatingTileSink implements AutoClos
         if (version == ImageInfo.IIIFVersion.V3) {
             if (trustAnchor != null) {
                 service.put("trustAnchor", trustAnchor);
+            } else if (signsWithCustomCa()) {
+                log.warn("Signing with a custom CA without a 'trust-anchor' URI: the tiles "
+                        + "are signed with a custom CA whose trust anchor is not advertised "
+                        + "in the info.json, so clients cannot verify them. Set "
+                        + "--sink-opt trust-anchor=<absolute URI> (credentials from a CA on "
+                        + "the C2PA trust list need no anchor).");
             }
             own = new InfoExtension(
                 java.util.List.of(C2PA_CONTEXT_URI),
@@ -358,6 +386,11 @@ public class C2paTileSink extends AbstractDelegatingTileSink implements AutoClos
         } catch (IOException e) {
             throw new TileSinkException("Cannot read key file " + keyPath, e);
         }
+    }
+
+    /** Whether real key material is configured (custom CA signing). */
+    private boolean signsWithCustomCa() {
+        return certPath != null && keyPath != null;
     }
 
     /** MIME type matching the configured tile format. */

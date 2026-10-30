@@ -34,6 +34,8 @@ fliiifenleger bootstrap wrapper
 Usage:
   bin/fliiifenleger [options] <cli command and arguments>
   bin/fliiifenleger cert [options]
+  bin/fliiifenleger default|ultrahdr <generate arguments>
+  bin/fliiifenleger c2pa [options] <generate arguments>
 
 Behavior:
   * Checks for java (JDK 23+ to build, 21+ to run) and cargo (WASM codecs);
@@ -43,12 +45,33 @@ Behavior:
     (override: MAVEN_VERSION=3.10.0 MAVEN_CACHE=~/.m2/wrapper/dists).
   * First run builds the CLI jar (mvn package -DskipTests; cargo-less runs
     fall back to prebuilt .wasm artifacts automatically).
-  * Executes the CLI. Pass-through: everything except 'cert' and
-    '--rebuild' goes to fliiifenleger-cli.
+  * Executes the CLI. Pass-through: everything except 'cert', the sink
+    shortcuts 'default'/'ultrahdr'/'c2pa' and '--rebuild' goes to
+    fliiifenleger-cli.
 
 Options:
   --rebuild            Force a rebuild before exec
   -h                   Show this help
+
+Sink shortcuts (run 'generate' with the image sink preset; a forwarded
+'--sink' is rejected because the subcommand already makes that choice):
+  default|ultrahdr     Equivalent to 'generate --sink <name>'; all other
+                       generate arguments pass through. 'ultrahdr' selects
+                       the sink here, the source stays --source ultrahdr.
+  c2pa options:
+    --out-dir DIR      Chain directory (default: ./certs)
+    --force            Regenerate the throwaway chain even if present
+    --create-ca        Accepted as the explicit form; the chain is always
+                       ensured before generation
+  c2pa wires the throwaway C2PA test chain into the c2pa sink: the chain is
+  auto-created when missing, reused with a warning when present, and an
+  incomplete chain aborts until it is regenerated with --force. Forwarded
+  cert=/key=/alg= sink options are rejected — for full control (real
+  credentials, ephemeral signing) use plain 'generate --sink c2pa'.
+  c2pa always generates IIIF Image API 3 output ('--iiif-version V3' is
+  injected unless given): custom-CA signing needs the namespaced
+  'c2pa:trustAnchor' property, which Image API 2 cannot express. A
+  forwarded '--iiif-version V2' is rejected.
 
 cert options (throwaway C2PA test chain, EC P-256 CA + end-entity):
   --out-dir DIR        Output directory (default: ./certs)
@@ -56,7 +79,8 @@ cert options (throwaway C2PA test chain, EC P-256 CA + end-entity):
   --org NAME           Organization O attribute (default: $CERT_ORG)
   --days N             Validity in days (default: $CERT_DAYS)
   --force              Replace existing key/cert files in the output dir
-Requires openssl (or LibreSSL); override with OPENSSL_BIN=/path/to/openssl
+Requires openssl (or LibreSSL) for 'cert' and 'c2pa' chain creation;
+override with OPENSSL_BIN=/path/to/openssl
 HELP
 }
 
@@ -240,10 +264,18 @@ do_cert() {
         if [ "${FORCE_CERT:-0}" != "1" ]; then
             die "$CERT_DIR already contains ca-cert.pem/key.pem; refusing to overwrite (use --force)"
         fi
-        for f in $CERT_FILES; do
-            rm -f "$CERT_DIR/$f"
-        done
+        clear_cert_dir
     fi
+    create_cert_chain
+}
+
+clear_cert_dir() {
+    for f in $CERT_FILES; do
+        rm -f "$CERT_DIR/$f"
+    done
+}
+
+create_cert_chain() {
     mkdir -p "$CERT_DIR"
 
     openssl_bin=$(find_openssl) || die "openssl is required to create the C2PA chain; install it (brew install openssl@3 / apt-get install openssl) or set OPENSSL_BIN"
@@ -320,7 +352,9 @@ Throwaway C2PA test chain created in $CERT_DIR
   Chain bundle:  $CERT_DIR/chain.pem (end-entity first; also usable as trustAnchor)
 
 Sign tiles with your own chain (test use only; not valid against the C2PA trust list):
-  bin/fliiifenleger generate --sink c2pa \\
+  bin/fliiifenleger c2pa -o ./signed-iiif /path/to/image.jpg
+  # or, with full control over the sink options:
+  bin/fliiifenleger generate --iiif-version V3 --sink c2pa \\
     --sink-opt cert=$CERT_DIR/chain.pem --sink-opt key=$CERT_DIR/key.pem \\
     --sink-opt alg=es256 \\
     -o ./signed-iiif /path/to/image.jpg
@@ -329,6 +363,222 @@ Validate against your anchor:
   bin/fliiifenleger validate --check-c2pa --trust-anchor $CERT_DIR/chain.pem \\
     -o reassembled.jpg <info.json-url>
 NEXT
+}
+
+usage_sink() {
+    sink=$1
+    cat <<HELP
+Usage: bin/fliiifenleger $sink <generate arguments>
+
+Shortcut for 'generate --sink $sink': the sink is preset and every other
+argument is forwarded to generate verbatim, e.g.
+
+  bin/fliiifenleger $sink --iiif-version V3 -o ./iiif-out /path/to/image.jpg
+
+A forwarded '--sink' is rejected. Note: '$sink' selects the image SINK here;
+the source stays '--source $sink'.
+HELP
+}
+
+usage_c2pa() {
+    cat <<HELP
+Usage: bin/fliiifenleger c2pa [options] <generate arguments>
+
+Shortcut for 'generate --sink c2pa' with the throwaway C2PA test chain
+wired in (created on first use, reused with a warning afterwards).
+
+Options:
+  --out-dir DIR        Chain directory (default: ./certs)
+  --force              Regenerate the chain even if it already exists
+  --create-ca          Accepted explicitly; the chain is always ensured
+
+Everything else is forwarded to generate, e.g.:
+
+  bin/fliiifenleger c2pa -o ./signed-iiif /path/to/image.jpg
+
+A forwarded '--sink' or cert=/key=/alg= sink option is rejected — the
+command manages the chain itself; use plain 'generate --sink c2pa' for
+full control (without cert/key it signs with an ephemeral certificate).
+The command always generates IIIF Image API 3 output ('--iiif-version V3'
+is injected unless given): custom-CA signing needs the namespaced
+'c2pa:trustAnchor' property, which Image API 2 cannot express. A
+forwarded '--iiif-version V2' is rejected. Advertise the chain with
+'--sink-opt trust-anchor=<absolute URI>' so clients can verify the tiles.
+Validate the result against the chain:
+
+  bin/fliiifenleger validate --check-c2pa --trust-anchor $CERT_DIR/chain.pem \\
+    -o reassembled.jpg <info.json-url>
+HELP
+}
+
+reject_sink_option() {
+    # $1 = preset sink name; the remaining arguments are the forwarded ones.
+    preset=$1
+    shift
+    prev=""
+    for arg in "$@"; do
+        if [ "$prev" = "--sink" ]; then
+            die "the $preset command already selects --sink $preset; remove '--sink'"
+        fi
+        case "$arg" in
+            --sink) prev="--sink" ;;
+            --sink=*) die "the $preset command already selects --sink $preset; remove '$arg'" ;;
+            *) prev="" ;;
+        esac
+    done
+}
+
+reject_c2pa_chain_opts() {
+    prev=""
+    for arg in "$@"; do
+        if [ "$prev" = "--sink-opt" ]; then
+            case "$arg" in
+                cert=*|key=*|alg=*) die "the c2pa command wires cert/key/alg to its test chain; remove '$arg' (use plain 'generate --sink c2pa' for full control)" ;;
+            esac
+        fi
+        case "$arg" in
+            --sink-opt) prev="--sink-opt" ;;
+            --sink-opt=*)
+                case "${arg#--sink-opt=}" in
+                    cert=*|key=*|alg=*) die "the c2pa command wires cert/key/alg to its test chain; remove '$arg' (use plain 'generate --sink c2pa' for full control)" ;;
+                esac
+                prev=""
+                ;;
+            *) prev="" ;;
+        esac
+    done
+}
+
+do_sink_generate() {
+    sink=$1
+    shift
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    if [ "$#" -eq 0 ]; then
+        usage_sink "$sink"
+        exit 2
+    fi
+    reject_sink_option "$sink" "$@"
+    main_with_cli_args generate --sink "$sink" "$@"
+}
+
+reject_c2pa_image_api_v2() {
+    prev=""
+    for arg in "$@"; do
+        if [ "$prev" = "--iiif-version" ]; then
+            case "$arg" in
+                [vV]2) die "the c2pa command signs with the throwaway custom chain; custom-CA signing requires IIIF Image API 3 — remove '--iiif-version V2'" ;;
+            esac
+        fi
+        case "$arg" in
+            --iiif-version) prev="--iiif-version" ;;
+            --iiif-version=*)
+                case "${arg#--iiif-version=}" in
+                    [vV]2) die "the c2pa command signs with the throwaway custom chain; custom-CA signing requires IIIF Image API 3 — remove '$arg'" ;;
+                esac
+                prev=""
+                ;;
+            *) prev="" ;;
+        esac
+    done
+}
+
+has_iiif_version_arg() {
+    for arg in "$@"; do
+        case "$arg" in
+            --iiif-version|--iiif-version=*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+do_c2pa() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --out-dir)
+                [ "$#" -ge 2 ] || die "--out-dir requires a value"
+                CERT_DIR="$2"
+                shift 2
+                ;;
+            --out-dir=*)
+                CERT_DIR="${1#*=}"
+                shift
+                ;;
+            --force)
+                FORCE_CERT=1
+                shift
+                ;;
+            --create-ca)
+                # Explicit form of the default behavior; the chain is
+                # always ensured below.
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    if [ "$#" -eq 0 ]; then
+        usage_c2pa
+        exit 2
+    fi
+    reject_sink_option c2pa "$@"
+    reject_c2pa_chain_opts "$@"
+    reject_c2pa_image_api_v2 "$@"
+
+    if [ -e "$CERT_DIR/ca-cert.pem" ] \
+        && [ -e "$CERT_DIR/key.pem" ] \
+        && [ -e "$CERT_DIR/chain.pem" ]; then
+        if [ "${FORCE_CERT:-0}" = "1" ]; then
+            clear_cert_dir
+            create_cert_chain
+        else
+            warn "reusing the existing C2PA chain in $CERT_DIR (pass --force to regenerate)"
+        fi
+    elif [ -e "$CERT_DIR/ca-cert.pem" ] \
+        || [ -e "$CERT_DIR/key.pem" ] \
+        || [ -e "$CERT_DIR/chain.pem" ]; then
+        if [ "${FORCE_CERT:-0}" = "1" ]; then
+            clear_cert_dir
+            create_cert_chain
+        else
+            die "$CERT_DIR contains an incomplete C2PA chain; regenerate it with 'bin/fliiifenleger c2pa --force' (or 'bin/fliiifenleger cert --force')"
+        fi
+    else
+        create_cert_chain
+    fi
+
+    if ! has_iiif_version_arg "$@"; then
+        # Custom-CA signing needs the namespaced 'c2pa:trustAnchor' property,
+        # which only a V3 info.json can express.
+        set -- --iiif-version V3 "$@"
+    fi
+    main_with_cli_args generate --sink c2pa \
+        --sink-opt "cert=$CERT_DIR/chain.pem" \
+        --sink-opt "key=$CERT_DIR/key.pem" \
+        --sink-opt "alg=es256" \
+        "$@"
 }
 
 maybe_build() {
@@ -380,6 +630,17 @@ case "${1:-}" in
     cert)
         shift
         do_cert "$@"
+        exit 0
+        ;;
+    c2pa)
+        shift
+        do_c2pa "$@"
+        exit 0
+        ;;
+    ultrahdr|default)
+        sink=$1
+        shift
+        do_sink_generate "$sink" "$@"
         exit 0
         ;;
     -h|--help|help)

@@ -218,8 +218,9 @@ public class Tiler {
      * {@link TileSink.InfoExtension} into the document.
      *
      * <p>The extension is resolved <em>before</em> tiling so incompatible
-     * combinations (e.g. C2PA {@code trust-anchor} with Image API 2, which
-     * has no place for namespaced properties) fail fast without writing tiles.
+     * combinations (e.g. C2PA {@code trust-anchor} or custom-CA signing
+     * with Image API 2, which has no place for namespaced properties) fail
+     * fast without writing tiles.
      */
     public Path createImage(
             ImageInfo imageInfo,

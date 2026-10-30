@@ -4,8 +4,13 @@ package de.christianmahnke.jc2pa;
 
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.sink.TileSink;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -53,6 +58,55 @@ class C2paInfoExtensionTest {
         assertThatThrownBy(() -> sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V2))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Image API 3");
+    }
+
+    @Test
+    @DisplayName("V2 with cert/key fails (custom CA signing requires Image API 3)")
+    void v2WithCustomCaFails() {
+        C2paTileSink sink = new C2paTileSink();
+        sink.setOptions(Map.of("cert", "chain.pem", "key", "key.pem"));
+        assertThatThrownBy(() -> sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Image API 3");
+    }
+
+    @Test
+    @DisplayName("V2 with cert/key and trust-anchor fails")
+    void v2WithCustomCaAndAnchorFails() {
+        C2paTileSink sink = new C2paTileSink();
+        sink.setOptions(Map.of("cert", "chain.pem", "key", "key.pem",
+                "trust-anchor", "https://example.org/trust/anchor"));
+        assertThatThrownBy(() -> sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Image API 3");
+    }
+
+    @Test
+    @DisplayName("V3 with cert/key advertises the service without trustAnchor")
+    void v3WithCustomCaWithoutAnchor() {
+        C2paTileSink sink = new C2paTileSink();
+        sink.setOptions(Map.of("cert", "chain.pem", "key", "key.pem"));
+        TileSink.InfoExtension ext = sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V3);
+        assertThat(ext.contexts()).containsExactly(C2paTileSink.C2PA_CONTEXT_URI);
+        assertThat(ext.services().get(0)).doesNotContainKey("trustAnchor");
+    }
+
+    @Test
+    @DisplayName("V3 with cert/key but without trust-anchor logs a warning")
+    void v3WithCustomCaWithoutAnchorWarns() {
+        Logger logger = (Logger) LoggerFactory.getLogger(C2paTileSink.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            C2paTileSink sink = new C2paTileSink();
+            sink.setOptions(Map.of("cert", "chain.pem", "key", "key.pem"));
+            sink.getInfoJsonExtension(ImageInfo.IIIFVersion.V3);
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertThat(appender.list).anyMatch(event -> event.getLevel() == Level.WARN
+                && event.getFormattedMessage().contains("trust-anchor"));
     }
 
     @Test
