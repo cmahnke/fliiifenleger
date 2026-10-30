@@ -3,7 +3,7 @@
   "@type": "SoftwareSourceCode",
   "name": "Fliiifenleger",
   "description": "Java-based command-line tool for generating and validating static IIIF images, with pluggable sources/sinks for UltraHDR gain-map tiling, C2PA-signed tiles and JPEG XL input.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "identifier": "https://github.com/cmahnke/fliiifenleger",
   "codeRepository": "https://github.com/cmahnke/fliiifenleger",
   "issueTracker": "https://github.com/cmahnke/fliiifenleger/issues",
@@ -27,9 +27,9 @@
     "url": "https://christianmahnke.de",
     "@id": "https://orcid.org/0009-0003-1361-4159"
   },
-  "datePublished": "2026-10-16",
-  "dateModified": "2026-10-16",
-  "downloadUrl": "https://github.com/cmahnke/fliiifenleger/releases/tag/v0.4.1",
-  "releaseNotes": "https://github.com/cmahnke/fliiifenleger/releases/tag/v0.4.1",
+  "datePublished": "2026-10-30",
+  "dateModified": "2026-10-30",
+  "downloadUrl": "https://github.com/cmahnke/fliiifenleger/releases/tag/v0.4.2",
+  "releaseNotes": "https://github.com/cmahnke/fliiifenleger/releases/tag/v0.4.2",
   "copyrightYear": "2026"
 }
