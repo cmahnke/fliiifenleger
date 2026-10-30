@@ -10,12 +10,15 @@ crate-type = ["cdylib"]
 [dependencies]
 # Use standard table syntax to avoid TOML inline-table single-line restriction.
 [dependencies.c2pa]
-# Pinned to 0.90.x: 0.91.0 flips `verify.verify_after_sign` to true and
-# restructures the trust settings schema (trust.anchors[]), which breaks the
-# WASM signing path (manifests without an intent fail validation right after
-# signing; the extra validation work also overflows the WASM stack, surfacing
-# as nondeterministic Chicory traps). Adopting 0.91 requires setting a proper
-# builder intent and migrating the trust-anchor settings — see TileSigner.
+# 0.91.0 flips `verify.verify_after_sign` to true; every sign re-validates the
+# store in-process, and a manifest without a c2pa.created/c2pa.opened inception
+# action fails that validation (assertion.action.malformed).  The wasm lib
+# therefore installs a `create:empty` default builder intent (overridden by
+# builder_set_intent or manifests carrying their own inception action) and
+# migrated trust-anchor handling to the with_json legacy overlay, since
+# Settings::with_value("trust.trust_anchors", ...) no longer reaches the
+# trust validation in 0.91 (settings now use the trust.anchors[] schema).
+# The extra in-sign validation also grows the required WASM stack below.
 version          = "0.91.5"
 default-features = false
 features         = [

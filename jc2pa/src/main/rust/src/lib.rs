@@ -338,6 +338,32 @@ fn trust_store() -> &'static std::sync::Mutex<Option<String>> {
     TRUST_ANCHORS.get_or_init(|| std::sync::Mutex::new(None))
 }
 
+/// Build settings with the PEM bundle installed as a trust anchor.
+///
+/// c2pa-rs 0.91 moved trust configuration into the `trust.anchors` list (a
+/// [`c2pa::settings::TrustAnchor`] per entry).  The legacy
+/// `trust.trust_anchors` PEM-bundle overlay is still honoured by
+/// [`c2pa::settings::Settings::with_json`], which converts it into the new
+/// field and rejects malformed bundles, so this keeps the plain PEM string
+/// contract of `trust_anchors_set`.
+///
+/// # Parameters
+/// - `pem`: UTF-8 PEM bundle (one or more certificates).
+///
+/// # Returns
+/// Settings with the bundle anchored, or a message string for `write_error`.
+fn trust_anchor_settings(pem: &str) -> Result<c2pa::settings::Settings, String> {
+    let overlay = serde_json::json!({
+        "trust": {
+            "trust_anchors": pem,
+        }
+    })
+    .to_string();
+    c2pa::settings::Settings::new()
+        .with_json(&overlay)
+        .map_err(|e| format!("invalid trust anchors: {e}"))
+}
+
 /// Build the reader context, honouring previously set trust anchors.
 ///
 /// # Parameters
@@ -353,9 +379,7 @@ fn reader_context() -> Result<c2pa::Context, String> {
     match anchors {
         None => Ok(c2pa::Context::new()),
         Some(pem) => {
-            let settings = c2pa::settings::Settings::new()
-                .with_value("trust.trust_anchors", pem)
-                .map_err(|e| format!("invalid trust anchors: {e}"))?;
+            let settings = trust_anchor_settings(&pem)?;
             c2pa::Context::new()
                 .with_settings(settings)
                 .map_err(|e| format!("cannot apply trust anchors: {e}"))
@@ -387,10 +411,10 @@ pub extern "C" fn trust_anchors_set(
             }
         }
     };
-    // Validate eagerly: a malformed bundle must fail here, not at the
-    // next reader creation.
-    if let Err(e) = c2pa::settings::Settings::new().with_value("trust.trust_anchors", pem.clone()) {
-        write_error(&format!("invalid trust anchors: {e}"), err_ptr, err_len);
+    // Validate eagerly: a malformed bundle must fail here and at the next
+    // reader creation (see trust_anchor_settings for the schema migration).
+    if let Err(e) = trust_anchor_settings(&pem) {
+        write_error(&e, err_ptr, err_len);
         return 0;
     }
     match trust_store().lock() {
@@ -623,6 +647,33 @@ struct BuilderHandle {
     builder: Builder,
 }
 
+/// Build the builder context with the default intent.
+///
+/// Since c2pa-rs 0.91 a signed manifest is re-validated in-process
+/// (`verify.verify_after_sign` defaults to true), and a store without a
+/// `c2pa.created`/`c2pa.opened` inception action fails that validation with
+/// `assertion.action.malformed`.  c2pa-rs therefore expects an explicit
+/// builder intent (which can only be supplied after `builder_from_json`
+/// returned).  Manifests that already carry their own inception action
+/// (first action in a `c2pa.actions` assertion) or an explicit
+/// `builder_set_intent("edit"/"update")` are unaffected; everything else
+/// gets `create:empty` so the builder defaults to a fresh creation rather
+/// than producing an unvalidatable store.
+///
+/// # Parameters
+/// - none.
+///
+/// # Returns
+/// A ready `c2pa::Context`, or an error string for `write_error`.
+fn builder_context() -> Result<c2pa::Context, String> {
+    let settings = c2pa::settings::Settings::new()
+        .with_json(r#"{"builder": {"intent": {"create": "empty"}}}"#)
+        .map_err(|e| format!("invalid builder settings: {e}"))?;
+    c2pa::Context::new()
+        .with_settings(settings)
+        .map_err(|e| format!("cannot apply builder settings: {e}"))
+}
+
 /// Create a `Builder` from a manifest definition JSON string.
 ///
 /// # Parameters
@@ -648,7 +699,13 @@ pub extern "C" fn builder_from_json(
         }
     };
 
-    let context = c2pa::Context::new();
+    let context = match builder_context() {
+        Ok(context) => context,
+        Err(e) => {
+            write_error(&e, err_ptr, err_len);
+            return 0;
+        }
+    };
     match Builder::from_context(context).with_definition(json) {
         Ok(builder) => {
             clear_error(err_ptr, err_len);
@@ -1078,6 +1135,11 @@ mod tests {
         "claim_generator": "jc2pa-test/0.1",
         "title": "Test Asset",
         "assertions": [
+            {
+                "label": "c2pa.actions",
+                "data": {"actions": [{"action": "c2pa.created",
+                                      "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"}]}
+            },
             {
                 "label": "org.contentauth.test",
                 "data": "test"
