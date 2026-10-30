@@ -38,19 +38,16 @@ jobs:
           target: wasm32-wasip1
 
       # Optional: enables the JXL image source tests in the core module.
+      # Runner images now preinstall libjxl0.11 (0.11.1), so the upstream
+      # release debs would collide with it — use the distro packages.
       - name: Install JXL library
         run: |
           sudo apt-get update
-          sudo apt-get install -y libstdc++6 libtcmalloc-minimal4 libgcc-s1 libc6 libhwy-dev libpng16-16 libbrotli1 libjpeg8 libgif7
-
-          wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
-          tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
-
-          sudo apt install -y -f ./libjxl_0.11.1_amd64.deb
-          sudo apt install -y -f ./jxl_0.11.1_amd64.deb
-          sudo apt install -y -f ./libjxl-dev_0.11.1_amd64.deb
-          sudo apt-get -f install
-          sudo find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
+          sudo apt-get install -y libjxl-dev
+          sudo find /usr/lib -name 'libjxl.so*' -print
+          test -e /usr/lib/x86_64-linux-gnu/libjxl.so \
+            || sudo ln -s "$(sudo find /usr/lib -name 'libjxl.so.*' | head -1)" \
+                          /usr/lib/x86_64-linux-gnu/libjxl.so
 
       - name: Configure Maven server credentials for GitHub Packages
         run: |
@@ -124,20 +121,17 @@ jobs:
           target: wasm32-wasip1
 
       # Enables the JXL image source tests in the core module (same
-      # packages as the release.yml amd64 leg).
+      # packages as the release.yml amd64 leg).  Runner images now
+      # preinstall libjxl0.11 (0.11.1), so the upstream release debs
+      # would collide with it — use the distro packages.
       - name: Install JXL library
         run: |
           sudo apt-get update
-          sudo apt-get install -y libstdc++6 libtcmalloc-minimal4 libgcc-s1 libc6 libhwy-dev libpng16-16 libbrotli1 libjpeg8 libgif7
-
-          wget https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
-          tar xzf jxl-debs-amd64-ubuntu-24.04-v0.11.1.tar.gz
-
-          sudo apt install -y -f ./libjxl_0.11.1_amd64.deb
-          sudo apt install -y -f ./jxl_0.11.1_amd64.deb
-          sudo apt install -y -f ./libjxl-dev_0.11.1_amd64.deb
-          sudo apt-get -f install
-          sudo find /usr/lib -name libjxl.so -print -exec ln -s {} /usr/lib/libjxl.so \;
+          sudo apt-get install -y libjxl-dev
+          sudo find /usr/lib -name 'libjxl.so*' -print
+          test -e /usr/lib/x86_64-linux-gnu/libjxl.so \
+            || sudo ln -s "$(sudo find /usr/lib -name 'libjxl.so.*' | head -1)" \
+                          /usr/lib/x86_64-linux-gnu/libjxl.so
 
       # Full test suite on the JVM plus the native binary.  Must NOT
       # deploy (the build job owns the snapshot deploy; a second deploy
