@@ -24,7 +24,7 @@
             GraalWasm dependencies (cli/pom.xml).  Keep in sync with the
             graalvm.version property in wasm-runtime/pom.xml.
         -->
-        <graalvm.version>25.4.4.1.1</graalvm.version>
+        <graalvm.version>25.5.5.0.3</graalvm.version>
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.48</lombok.version>
         <jackson.version>3.2.4</jackson.version>
@@ -112,7 +112,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.8</version>
+                <version>3.0.9</version>
             </dependency>
 
             <!-- Image IO -->
