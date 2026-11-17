@@ -19,7 +19,7 @@ crate-type = ["cdylib"]
 # Settings::with_value("trust.trust_anchors", ...) no longer reaches the
 # trust validation in 0.91 (settings now use the trust.anchors[] schema).
 # The extra in-sign validation also grows the required WASM stack below.
-version          = "0.91.5"
+version          = "0.92.1"
 default-features = false
 features         = [
     "rust_native_crypto",
