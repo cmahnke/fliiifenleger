@@ -1961,6 +1961,12 @@
       "glob": "schema/image-api-3-info.json"
     },
     {
+      "glob": "schema/presentation/iiif_3_0.json"
+    },
+    {
+      "glob": "schema/presentation/v4/*.json"
+    },
+    {
       "glob": "ultrahdr_wasm.wasm"
     },
     {

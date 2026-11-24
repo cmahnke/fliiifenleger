@@ -95,7 +95,71 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.build.directory}/generated-resources</directory>
+            </resource>
+        </resources>
         <plugins>
+            <!--
+                The IIIF Presentation schemas are a moving target (V4 is a
+                release candidate), so they are fetched from upstream `main`
+                at build time instead of being vendored in the repository.
+                Antrun downloads the source tarball, extracts the schema set
+                into target/generated-resources, and normalizes four $refs
+                whose casing differs from the filenames upstream.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>fetch-presentation-schemas</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <property name="iiif.schema.archive"
+                                          value="${project.build.directory}/iiif-presentation-schema.tar.gz" />
+                                <property name="iiif.schema.unpack"
+                                          value="${project.build.directory}/iiif-schema-upstream" />
+                                <property name="iiif.schema.output"
+                                          value="${project.build.directory}/generated-resources/schema/presentation" />
+                                <get src="https://codeload.github.com/IIIF/presentation-validator/tar.gz/refs/heads/main"
+                                     dest="${iiif.schema.archive}"
+                                     skipexisting="false" />
+                                <delete dir="${iiif.schema.unpack}" />
+                                <mkdir dir="${iiif.schema.unpack}" />
+                                <untar src="${iiif.schema.archive}"
+                                       dest="${iiif.schema.unpack}"
+                                       compression="gzip" />
+                                <delete dir="${iiif.schema.output}" />
+                                <copy todir="${iiif.schema.output}">
+                                    <fileset dir="${iiif.schema.unpack}/presentation-validator-main/schema">
+                                        <include name="iiif_3_0.json" />
+                                        <include name="v4/*.json" />
+                                    </fileset>
+                                </copy>
+                                <replace dir="${iiif.schema.output}/v4" includes="*.json" summary="true">
+                                    <replacefilter token="&quot;$ref&quot;: &quot;Metadata.json&quot;"
+                                                   value="&quot;$ref&quot;: &quot;metadata.json&quot;" />
+                                    <replacefilter token="&quot;$ref&quot;: &quot;Service.json&quot;"
+                                                   value="&quot;$ref&quot;: &quot;service.json&quot;" />
+                                    <replacefilter token="&quot;$ref&quot;: &quot;Agent.json&quot;"
+                                                   value="&quot;$ref&quot;: &quot;agent.json&quot;" />
+                                    <replacefilter token="&quot;$ref&quot;: &quot;Audiance.json&quot;"
+                                                   value="&quot;$ref&quot;: &quot;audiance.json&quot;" />
+                                </replace>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

@@ -132,7 +132,7 @@ class ManifestMergerTest {
         JsonNode node = new ObjectMapper().readTree(result);
 
         assertEquals("Manifest", node.get("type").asString());
-        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", node.get("@context").asString());
+        assertEquals(IiifManifest.V3_CONTEXT, node.get("@context").asString());
         assertEquals(1, node.get("items").size());
     }
 

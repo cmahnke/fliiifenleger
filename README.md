@@ -151,11 +151,23 @@ the wrapper runs `mvn package -DskipTests` — deliberately without `clean`,
 so the WASM codecs are not recompiled on every invocation — and then
 executes the CLI with `--enable-native-access=ALL-UNNAMED` (required for
 the JXL imageio plugin's FFM usage, and by the `jxl` source). Everything
-except `cert`, the sink shortcut subcommands (`default`, `ultrahdr`,
-`c2pa`) and `--rebuild` is passed through verbatim, so the CLI's own
-subcommand help works as usual (`bin/fliiifenleger generate -h`); the
-wrapper's own `-h` help explains bootstrap behavior and the wrapper's own
-subcommands.
+except `init`, `cert`, the sink shortcut subcommands (`default`,
+`ultrahdr`, `c2pa`) and `--rebuild` is passed through verbatim, so the
+CLI's own subcommand help works as usual (`bin/fliiifenleger generate
+-h`); the wrapper's own `-h` help lists its subcommands, and the general
+bootstrap behavior is carried by the
+[`init` subcommand](#the-init-subcommand)
+(`bin/fliiifenleger init --help`).
+
+#### The `init` subcommand
+
+`bin/fliiifenleger init` runs the bootstrap once without starting the
+CLI: it checks `java`, `cargo` and `openssl` (all warn-only), resolves
+Maven — downloading and SHA-512-verifying the Apache distribution when no
+`mvn` is on the `PATH` — and builds `cli/target/fliiifenleger-cli.jar`
+when it is missing (`--rebuild` forces it). Its `--help` text is the
+wrapper's general behavior documentation (tool requirements plus the
+`MAVEN_VERSION`, `MAVEN_CACHE`, `OPENSSL_BIN` overrides listed below).
 
 Environment overrides: `MAVEN_VERSION` (default `3.10.0` — dlcdn serves
 only current releases, so pinning an older version automatically uses the
@@ -320,7 +332,7 @@ Generates IIIF tiles from one or more local image files.
 | Option | Alias | Description | Default |
 |---|---|---|---|
 | `--identifier <id>` | `-i` | Set the identifier in the info.json. | `http://localhost:8887/iiif/` |
-| `--iiif-version <ver>` | | Set the IIIF version. Options: `V2`, `V3`. | `V2` |
+| `--iiif-version <ver>` | | Set the IIIF **Image API** version. Options: `V2`, `V3`. `V4` is Presentation API only and rejected. | `V2` |
 | `--output <dir>` | `-o` | Directory where the IIIF images are generated. | `iiif` |
 | `--sink <name>` | | The image sink implementation to use for tiles. Available: `default` (option: `format`), `ultrahdr` (tiles with integrated gain maps), `c2pa` (C2PA-signed tiles). | `default` |
 | `--sink-opt <k=v>` | | Set an option for the image sink (e.g., --sink-opt key=value). | |
@@ -350,12 +362,14 @@ image as before. `--format` applies to SDR output; HDR output is always JPEG
 Any tile that cannot be fetched or decoded is now reported and fails the
 validation (exit code 1) instead of silently producing a black region.
 
-**Usage:** `fliiifenleger validate [OPTIONS] <info.json-url>`
+**Usage:** `fliiifenleger validate [OPTIONS] <info.json-url|manifest-file-or-url>`
 
 | Option | Alias | Description | Default |
 |---|---|---|---|
 | `--format <fmt>` | `-f` | Output image format (e.g., jpg, png). SDR only — HDR endpoints always write JPEG. | `jpg` |
-| `--output <path>` | `-o` | **Required.** Path to save the reassembled image. | |
+| `--output <path>` | `-o` | Required unless `--manifest` is set. Path to save the reassembled image. | |
+| `--manifest` | | Validate a IIIF Presentation API manifest (file or URL) instead of reassembling an image. | off |
+| `--manifest-version <ver>` | | With `--manifest`: expected Presentation version `auto`, `2`, `3`, `4`. | `auto` |
 | `--check-c2pa` | | Check every fetched tile for a C2PA manifest. Exit code 2 if any tile has no (valid) manifest. | |
 | `--trust-anchor <pem>` | | With `--check-c2pa`: validate every tile as `Trusted` against the given PEM trust anchor bundle (file). Exit code 2 if any tile is not trusted. Without it, manifest presence suffices. | |
 | `--schema <mode>` | | Validate info.json against its JSON Schema before reassembly. Values: `auto` (detect from `@context`), `2`, `3`, `off`. Exit code 1 on mismatch. | `auto` |
@@ -363,6 +377,9 @@ validation (exit code 1) instead of silently producing a black region.
 **Example:**
 ```sh
 java -jar cli/target/fliiifenleger-cli.jar validate --output reassembled.jpg https://example.com/iiif/2/my-image/info.json
+
+# Validate a Presentation API 4 manifest instead of reassembling tiles
+java -jar cli/target/fliiifenleger-cli.jar validate --manifest --manifest-version 4 https://example.com/manifest.json
 ```
 
 ### `info`
@@ -431,6 +448,36 @@ the `jc2pa` module validates C2PA service entries (context presence,
 `trustAnchor` URI) and the `ultrahdr` module validates HDR gain-map service
 entries (completeness, context presence). On a core-only classpath (no
 extension modules), extension service entries validate as generic services.
+
+### Manifest validation and Presentation API 4
+
+`validate --manifest` validates a IIIF Presentation API manifest from a file or
+URL (`--manifest-version auto|2|3|4`, default `auto`). It exits 1 on the first
+validation failure.
+
+- **V4:** checked against the official IIIF Presentation 4.0 schema set
+  (draft 2020-12), plus Java ports of the upstream custom checks
+  (duplicate `id` values, IIIF context must be last). V4 is a release
+  candidate, so the schemas are not vendored: the `core` build downloads the
+  schema directory from the `main` branch of `IIIF/presentation-validator`
+  into `core/target/generated-resources/schema/presentation/`. Four `$ref`s
+  with wrong casing upstream are normalized during the build so validation
+  works on case-sensitive filesystems and in the shaded jar.
+- **V3:** checked against the official self-contained IIIF Presentation 3.0
+  schema (`schema/presentation/iiif_3_0.json`, draft 07), fetched from the same
+  upstream source, plus the remote `id`-matches-URL check.
+- Tracking upstream `main` means every Maven build needs network access to
+  `codeload.github.com`; there is no local schema fallback.
+- **V2:** no official JSON Schema exists; `ManifestValidator` applies
+  structural checks of the `sc:Manifest` / `sc:Sequence` / `sc:Canvas` /
+  `iiif:ImageService` shape instead.
+
+`IiifManifest` generates V2, V3 **and V4** manifests (`manifest -v V4`). V3
+output is now spec-compliant (iiif.io context, language-map `label`/`summary`,
+Canvas → AnnotationPage → Annotation with a typed target and ImageService3),
+which is a breaking change for consumers relying on the previous shape.
+`IIIFVersion.V4` is rejected by all Image API paths (`generate --iiif-version`,
+`--validate-info`) because no Image API 4 exists.
 
 ## UltraHDR (gain map) tiling
 

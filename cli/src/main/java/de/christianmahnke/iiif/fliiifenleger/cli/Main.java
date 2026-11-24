@@ -5,6 +5,7 @@ package de.christianmahnke.iiif.fliiifenleger.cli;
 import ch.qos.logback.classic.Level;
 import de.christianmahnke.iiif.fliiifenleger.ImageInfo;
 import de.christianmahnke.iiif.fliiifenleger.IiifManifest;
+import de.christianmahnke.iiif.fliiifenleger.ManifestValidator;
 import de.christianmahnke.iiif.fliiifenleger.ManifestMerger;
 import de.christianmahnke.iiif.fliiifenleger.ManifestUpdater;
 import de.christianmahnke.iiif.fliiifenleger.Tiler;
@@ -92,7 +93,7 @@ public class Main implements Runnable {
         @Option(names = "--sink-opt", description = "Set an option for the image sink (e.g., --sink-opt key=value).")
         private Map<String, String> sinkOptions;
 
-        @Option(names = "--iiif-version", description = "Set the IIIF version. Options are V2, V3.", defaultValue = "V2")
+        @Option(names = "--iiif-version", description = "Set the IIIF Image API version. Options are V2, V3. V4 is Presentation API only.", defaultValue = "V2")
         private ImageInfo.IIIFVersion version;
 
         @Option(names = "--validate-info", description = "Validate the generated info.json against the JSON Schema for the requested IIIF version.")
@@ -128,6 +129,10 @@ public class Main implements Runnable {
             }
             if (version == null) {
                 version = ImageInfo.IIIFVersion.V2;
+            }
+            if (version == ImageInfo.IIIFVersion.V4) {
+                log.error("--iiif-version V4 is not supported: Image API 4 does not exist. Use V2 or V3; V4 is Presentation API only (manifest -v).");
+                return 1;
             }
 
             java.util.concurrent.atomic.AtomicInteger failures = new java.util.concurrent.atomic.AtomicInteger(0);
@@ -239,11 +244,17 @@ public class Main implements Runnable {
             mixinStandardHelpOptions = true)
     static class ValidateCommand implements Callable<Integer> {
 
-        @Parameters(index = "0", description = "The URL of the info.json for the IIIF image to validate.")
+        @Parameters(index = "0", description = "The URL or file path of the info.json (or manifest with --manifest) to validate.")
         private String infoJsonUrl;
 
-        @Option(names = {"-o", "--output"}, description = "Path to save the reassembled image.", required = true)
+        @Option(names = {"-o", "--output"}, description = "Path to save the reassembled image (required unless --manifest is set).")
         private Path outputPath;
+
+        @Option(names = "--manifest", description = "Validate a IIIF Presentation API manifest instead of reassembling an image.")
+        private boolean manifest;
+
+        @Option(names = "--manifest-version", description = "Presentation version to expect with --manifest: auto, 2, 3, 4.", defaultValue = "auto")
+        private String manifestVersion;
 
         @Option(names = {"-f", "--format"}, description = "Output image format (e.g., jpg, png).", defaultValue = "jpg")
         private String format;
@@ -263,6 +274,36 @@ public class Main implements Runnable {
         public Integer call() {
             log.info("Starting validation for: {}", infoJsonUrl);
             try {
+                if (manifest) {
+                    ImageInfo.IIIFVersion expected = null;
+                    if ("2".equals(manifestVersion) || "v2".equalsIgnoreCase(manifestVersion)) {
+                        expected = ImageInfo.IIIFVersion.V2;
+                    } else if ("3".equals(manifestVersion) || "v3".equalsIgnoreCase(manifestVersion)) {
+                        expected = ImageInfo.IIIFVersion.V3;
+                    } else if ("4".equals(manifestVersion) || "v4".equalsIgnoreCase(manifestVersion)) {
+                        expected = ImageInfo.IIIFVersion.V4;
+                    } else if (!"auto".equalsIgnoreCase(manifestVersion)) {
+                        log.error("Invalid --manifest-version value '{}': expected auto, 2, 3, or 4.", manifestVersion);
+                        return 1;
+                    }
+                    var result = infoJsonUrl.startsWith("http://") || infoJsonUrl.startsWith("https://")
+                            ? ManifestValidator.validate(new URI(infoJsonUrl).toURL(), expected)
+                            : ManifestValidator.validate(Path.of(infoJsonUrl), expected);
+                    if (!result.valid()) {
+                        for (String error : result.errors()) {
+                            log.error("manifest schema error: {}", error);
+                        }
+                        log.error("Manifest validation failed for {}", infoJsonUrl);
+                        return 1;
+                    }
+                    log.info("Manifest validation passed (detected Presentation API {}).",
+                            result.detectedVersion() != null ? result.detectedVersion().getExactVersion() : "?");
+                    return 0;
+                }
+                if (outputPath == null) {
+                    log.error("--output is required unless --manifest is set.");
+                    return 1;
+                }
                 if (!"off".equalsIgnoreCase(schemaMode)) {
                     ImageInfo.IIIFVersion expected = null;
                     if ("2".equals(schemaMode) || "v2".equalsIgnoreCase(schemaMode)) {
@@ -444,7 +485,7 @@ public class Main implements Runnable {
         @Option(names = {"-b", "--base-uri"}, description = "The new base URI for the merged manifest.", required = true)
         private String baseUri;
 
-        @Option(names = {"-v", "--version"}, description = "IIIF Presentation API version. Options are V2, V3.", defaultValue = "V2")
+        @Option(names = {"-v", "--version"}, description = "IIIF Presentation API version. Options are V2, V3, V4.", defaultValue = "V2")
         private ImageInfo.IIIFVersion version;
 
         @Option(names = {"-o", "--output"}, description = "Path to save the merged manifest.json.")

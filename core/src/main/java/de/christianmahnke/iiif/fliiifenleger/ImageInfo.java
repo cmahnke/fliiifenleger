@@ -80,6 +80,10 @@ public class ImageInfo {
     }
 
     public Map<String, Object> toJson() {
+        if (version == IIIFVersion.V4) {
+            throw new IllegalArgumentException(
+                    "IIIF Presentation API 4 has no Image API info.json; use V2 or V3 for tile generation.");
+        }
         Map<String, Object> json = new LinkedHashMap<>();
         if (version == IIIFVersion.V3) {
             json.put("@context", "http://iiif.io/api/image/3/context.json");
@@ -149,11 +153,14 @@ public class ImageInfo {
     }
 
     /**
-     * Enum representing supported IIIF Image API versions.
+     * Enum representing supported IIIF versions. V2 and V3 are Image API
+     * versions; V4 exists only for the Presentation API and is rejected by
+     * the Image API generation and validation paths.
      */
     public enum IIIFVersion {
         V2("2", "2.1.1"),
-        V3("3", "3.0.0");
+        V3("3", "3.0.0"),
+        V4("4", "4.0.0-draft");
 
         private final String shortName;
         private final String exactVersion;

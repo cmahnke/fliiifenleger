@@ -17,7 +17,11 @@ public class IiifManifest {
     protected static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static final String V2_CONTEXT = "http://iiif.io/api/presentation/2/context.json";
-    public static final String V3_CONTEXT = "https://www.w3.org/ns/iiif/presentation/3/context.json";
+    public static final String V3_CONTEXT = "http://iiif.io/api/presentation/3/context.json";
+    public static final String V4_CONTEXT = "http://iiif.io/api/presentation/4/context.json";
+
+    /** Legacy context emitted by earlier versions; still accepted on input. */
+    protected static final String V3_LEGACY_CONTEXT = "https://www.w3.org/ns/iiif/presentation/3/context.json";
 
     protected final ImageInfo.IIIFVersion version;
     protected String baseUri;
@@ -50,7 +54,11 @@ public class IiifManifest {
     }
 
     public JsonNode toJson() {
-        return version == ImageInfo.IIIFVersion.V2 ? buildV2() : buildV3();
+        return switch (version) {
+            case V2 -> buildV2();
+            case V3 -> buildV3();
+            case V4 -> buildV4();
+        };
     }
 
     protected ObjectNode buildV2() {
@@ -137,52 +145,76 @@ public class IiifManifest {
     }
 
     protected ObjectNode buildV3() {
+        return buildPresentation(V3_CONTEXT);
+    }
+
+    protected ObjectNode buildV4() {
+        return buildPresentation(V4_CONTEXT);
+    }
+
+    protected ObjectNode buildPresentation(String context) {
         ObjectNode manifest = MAPPER.createObjectNode();
-        manifest.put("@context", V3_CONTEXT);
+        manifest.put("@context", context);
         manifest.put("id", baseUri);
         manifest.put("type", "Manifest");
-        if (label != null) manifest.put("label", label);
-        if (description != null) manifest.put("description", description);
+        if (label != null) manifest.set("label", lngString(label));
+        if (description != null) manifest.set("summary", lngString(description));
 
         ArrayNode itemsArray = MAPPER.createArrayNode();
         for (CanvasRef canvas : canvases) {
-            itemsArray.add(buildCanvasV3(canvas));
+            itemsArray.add(buildCanvasPresentation(canvas));
         }
         manifest.set("items", itemsArray);
-
         return manifest;
     }
 
     protected ObjectNode buildCanvasV3(CanvasRef canvas) {
+        return buildCanvasPresentation(canvas);
+    }
+
+    protected ObjectNode buildCanvasV4(CanvasRef canvas) {
+        return buildCanvasPresentation(canvas);
+    }
+
+    protected ObjectNode buildCanvasPresentation(CanvasRef canvas) {
+        String canvasId = baseUri + "/canvas/" + canvas.id;
         ObjectNode canvasNode = MAPPER.createObjectNode();
-        canvasNode.put("id", baseUri + "/canvas/" + canvas.id);
+        canvasNode.put("id", canvasId);
         canvasNode.put("type", "Canvas");
-        if (canvas.label != null) canvasNode.put("label", canvas.label);
+        if (canvas.label != null) canvasNode.set("label", lngString(canvas.label));
         canvasNode.put("width", canvas.width);
         canvasNode.put("height", canvas.height);
 
-        ObjectNode item = MAPPER.createObjectNode();
-        item.put("id", canvas.imageInfoId);
-        item.put("type", "Image");
-        item.put("width", canvas.width);
-        item.put("height", canvas.height);
+        ObjectNode body = MAPPER.createObjectNode();
+        if (canvas.imageInfoId != null) body.put("id", canvas.imageInfoId);
+        body.put("type", "Image");
+        body.put("format", "image/jpeg");
+        body.put("width", canvas.width);
+        body.put("height", canvas.height);
 
-        ArrayNode bodyArray = MAPPER.createArrayNode();
-        bodyArray.add(item);
-        canvasNode.set("body", bodyArray);
+        ObjectNode service = MAPPER.createObjectNode();
+        if (canvas.imageInfoId != null) service.put("id", canvas.imageInfoId);
+        service.put("type", "ImageService3");
+        service.put("profile", "level2");
+        body.set("service", MAPPER.createArrayNode().add(service));
 
         ObjectNode target = MAPPER.createObjectNode();
-        target.put("id", baseUri + "/canvas/" + canvas.id);
+        target.put("id", canvasId);
         target.put("type", "Canvas");
-        canvasNode.set("target", target);
 
-        ArrayNode itemsFinal = MAPPER.createArrayNode();
-        itemsFinal.add(item);
-        canvasNode.set("items", itemsFinal);
+        ObjectNode annotation = MAPPER.createObjectNode();
+        annotation.put("id", canvasId + "/annotation");
+        annotation.put("type", "Annotation");
+        annotation.set("motivation", MAPPER.createArrayNode().add("painting"));
+        annotation.set("body", body);
+        annotation.set("target", target);
 
-        // Reset to cleaner structure
-        canvasNode.remove("body");
-        canvasNode.remove("target");
+        ObjectNode page = MAPPER.createObjectNode();
+        page.put("id", canvasId + "/page");
+        page.put("type", "AnnotationPage");
+        page.set("items", MAPPER.createArrayNode().add(annotation));
+
+        canvasNode.set("items", MAPPER.createArrayNode().add(page));
 
         if (canvas.seeAlso != null && !canvas.seeAlso.isEmpty()) {
             ArrayNode seeAlsoArray = MAPPER.createArrayNode();
@@ -206,14 +238,36 @@ public class IiifManifest {
         return canvasNode;
     }
 
+    protected static ObjectNode lngString(String value) {
+        ObjectNode node = MAPPER.createObjectNode();
+        node.set("en", MAPPER.createArrayNode().add(value));
+        return node;
+    }
+
+    protected static String textFromNode(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        if (node.isString()) return node.asString();
+        if (node.isObject()) {
+            for (String key : node.propertyNames()) {
+                JsonNode values = node.get(key);
+                if (values.isArray() && !values.isEmpty()) {
+                    return values.get(0).asString();
+                }
+                if (values.isString()) return values.asString();
+            }
+        }
+        if (node.isArray() && !node.isEmpty()) return textFromNode(node.get(0));
+        return null;
+    }
+
     public static IiifManifest fromJson(String json) throws Exception {
         JsonNode node = MAPPER.readTree(json);
         ImageInfo.IIIFVersion version = detectVersion(node);
         String id = version == ImageInfo.IIIFVersion.V2
                 ? (node.has("@id") ? node.get("@id").asString() : null)
                 : (node.has("id") ? node.get("id").asString() : null);
-        String label = node.has("label") ? node.get("label").asString() : null;
-        String description = node.has("description") ? node.get("description").asString() : null;
+        String label = textFromNode(node.get("label"));
+        String description = textFromNode(node.has("summary") ? node.get("summary") : node.get("description"));
 
         IiifManifest manifest = new IiifManifest(version, id, label);
         if (description != null) manifest.setDescription(description);
@@ -224,14 +278,45 @@ public class IiifManifest {
         return manifest;
     }
 
-    protected static ImageInfo.IIIFVersion detectVersion(JsonNode node) {
+    public static ImageInfo.IIIFVersion detectVersion(JsonNode node) {
         JsonNode context = node.get("@context");
         if (context != null) {
-            String ctxStr = context.isString() ? context.asString() : context.get(0).asString();
-            if (ctxStr != null && ctxStr.contains("presentation/3")) return ImageInfo.IIIFVersion.V3;
+            List<String> contexts = new ArrayList<>();
+            if (context.isString()) {
+                contexts.add(context.asString());
+            } else if (context.isArray()) {
+                for (JsonNode entry : context) {
+                    if (entry.isString()) contexts.add(entry.asString());
+                }
+            }
+            for (String ctx : contexts) {
+                if (ctx.contains("presentation/4")) return ImageInfo.IIIFVersion.V4;
+                if (ctx.contains("presentation/3")) return ImageInfo.IIIFVersion.V3;
+            }
         }
-        if (node.has("type") && "Manifest".equals(node.get("type").asString())) return ImageInfo.IIIFVersion.V3;
+        if (node.has("type") && "Manifest".equals(textFromNode(node.get("type")))) return ImageInfo.IIIFVersion.V3;
         return ImageInfo.IIIFVersion.V2;
+    }
+
+    protected static String extractImageId(JsonNode canvasNode) {
+        JsonNode items = canvasNode.get("items");
+        if (items == null || !items.isArray() || items.isEmpty()) return null;
+        JsonNode first = items.get(0);
+        JsonNode body = first;
+        if (first.has("items") && first.get("items").isArray() && !first.get("items").isEmpty()) {
+            JsonNode annotation = first.get("items").get(0);
+            if (annotation.has("body")) body = annotation.get("body");
+        } else if (first.has("body")) {
+            body = first.get("body");
+        }
+        if (body.isArray() && !body.isEmpty()) body = body.get(0);
+        if (body.has("id")) return body.get("id").asString();
+        JsonNode service = body.get("service");
+        if (service != null) {
+            if (service.isArray() && !service.isEmpty()) service = service.get(0);
+            if (service.has("id")) return service.get("id").asString();
+        }
+        return null;
     }
 
     protected static List<CanvasRef> extractCanvases(JsonNode node, ImageInfo.IIIFVersion version) {
@@ -243,7 +328,7 @@ public class IiifManifest {
                 if (canvases != null && canvases.isArray()) {
                     for (JsonNode canvasNode : canvases) {
                         String canvasId = canvasNode.has("@id") ? canvasNode.get("@id").asString() : null;
-                        String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asString() : null;
+                        String canvasLabel = textFromNode(canvasNode.get("label"));
                         int width = canvasNode.has("width") ? canvasNode.get("width").asInt() : 0;
                         int height = canvasNode.has("height") ? canvasNode.get("height").asInt() : 0;
                         String imageInfoId = null;
@@ -267,14 +352,10 @@ public class IiifManifest {
             if (items != null && items.isArray()) {
                 for (JsonNode canvasNode : items) {
                     String canvasId = canvasNode.has("id") ? canvasNode.get("id").asString() : null;
-                    String canvasLabel = canvasNode.has("label") ? canvasNode.get("label").asString() : null;
+                    String canvasLabel = textFromNode(canvasNode.get("label"));
                     int width = canvasNode.has("width") ? canvasNode.get("width").asInt() : 0;
                     int height = canvasNode.has("height") ? canvasNode.get("height").asInt() : 0;
-                    String imageInfoId = null;
-                    if (canvasNode.has("items") && canvasNode.get("items").isArray()
-                            && canvasNode.get("items").size() > 0) {
-                        imageInfoId = canvasNode.get("items").get(0).get("id").asString();
-                    }
+                    String imageInfoId = extractImageId(canvasNode);
                     List<SeeAlsoRef> seeAlsoRefs = extractSeeAlso(canvasNode);
                     if (canvasId != null) {
                         String id = canvasId.substring(canvasId.lastIndexOf('/') + 1);

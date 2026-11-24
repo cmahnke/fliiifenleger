@@ -32,55 +32,74 @@ usage() {
 fliiifenleger bootstrap wrapper
 
 Usage:
-  bin/fliiifenleger [options] <cli command and arguments>
-  bin/fliiifenleger cert [options]
-  bin/fliiifenleger default|ultrahdr <generate arguments>
-  bin/fliiifenleger c2pa [options] <generate arguments>
+  bin/fliiifenleger [flags] [command] [arguments]
+
+Wrapper subcommands:
+  init             Bootstrap the environment and build the CLI jar (java,
+                   cargo, Maven; general behavior docs:
+                   'bin/fliiifenleger init --help')
+  cert             Generate the throwaway C2PA test chain
+  c2pa             'generate --sink c2pa' with the test chain wired in (IIIF V3)
+  default|ultrahdr 'generate --sink <name>'; other arguments pass through
+
+CLI subcommands (forwarded verbatim):
+  generate, validate, manifest, info, runtime
+  ('bin/fliiifenleger generate -h' etc.)
+
+Flags:
+  --rebuild    Force a CLI jar rebuild before exec
+  --help       Show this help
+
+Further help: 'bin/fliiifenleger <command> --help' or README.md
+HELP
+}
+
+usage_init() {
+    cat <<HELP
+Usage: bin/fliiifenleger init [--rebuild] [--help]
+
+Bootstraps a fresh clone into a working CLI: checks the toolchain,
+resolves Maven and builds cli/target/fliiifenleger-cli.jar when it is
+missing (--rebuild forces it). Nothing is executed afterwards; run the
+CLI the usual way ('bin/fliiifenleger generate -h', ...).
 
 Behavior:
-  * Checks for java (JDK 23+ to build, 21+ to run) and cargo (WASM codecs);
-    warn-only if missing.
-  * Uses Maven from PATH, else downloads the official Apache distribution
-    (SHA-512 verified) into $MAVEN_CACHE
+  * Checks for java (JDK 23+ to build, 21+ to run) and cargo (WASM
+    codecs); warn-only if missing.
+  * Checks for openssl for the 'cert'/'c2pa' test chain (warn-only;
+    override: OPENSSL_BIN=/path/to/openssl).
+  * Uses Maven from PATH, else downloads the official Apache
+    distribution (SHA-512 verified) into $MAVEN_CACHE
     (override: MAVEN_VERSION=3.10.0 MAVEN_CACHE=~/.m2/wrapper/dists).
-  * First run builds the CLI jar (mvn package -DskipTests; cargo-less runs
-    fall back to prebuilt .wasm artifacts automatically).
-  * Executes the CLI. Pass-through: everything except 'cert', the sink
-    shortcuts 'default'/'ultrahdr'/'c2pa' and '--rebuild' goes to
-    fliiifenleger-cli.
+  * First run builds the CLI jar (mvn package -DskipTests; cargo-less
+    runs fall back to prebuilt .wasm artifacts automatically).
+
+Environment overrides:
+  MAVEN_VERSION   Maven distribution to download (default: 3.10.0)
+  MAVEN_CACHE     Cache for the downloaded distribution (default:
+                  ~/.m2/wrapper/dists)
+  OPENSSL_BIN     openssl binary for 'cert'/'c2pa' (default: PATH lookup)
+  JAVA_HOME       java used to run the CLI when 'java' is not on PATH
+HELP
+}
+
+usage_cert() {
+    cat <<HELP
+Usage: bin/fliiifenleger cert [options]
+
+Generates the throwaway C2PA test chain: EC P-256 CA + end-entity
+certificate with a PKCS#8 key, chained in chain.pem (end-entity first;
+also usable as a trust-anchor bundle).
 
 Options:
-  --rebuild            Force a rebuild before exec
-  -h                   Show this help
-
-Sink shortcuts (run 'generate' with the image sink preset; a forwarded
-'--sink' is rejected because the subcommand already makes that choice):
-  default|ultrahdr     Equivalent to 'generate --sink <name>'; all other
-                       generate arguments pass through. 'ultrahdr' selects
-                       the sink here, the source stays --source ultrahdr.
-  c2pa options:
-    --out-dir DIR      Chain directory (default: ./certs)
-    --force            Regenerate the throwaway chain even if present
-    --create-ca        Accepted as the explicit form; the chain is always
-                       ensured before generation
-  c2pa wires the throwaway C2PA test chain into the c2pa sink: the chain is
-  auto-created when missing, reused with a warning when present, and an
-  incomplete chain aborts until it is regenerated with --force. Forwarded
-  cert=/key=/alg= sink options are rejected — for full control (real
-  credentials, ephemeral signing) use plain 'generate --sink c2pa'.
-  c2pa always generates IIIF Image API 3 output ('--iiif-version V3' is
-  injected unless given): custom-CA signing needs the namespaced
-  'c2pa:trustAnchor' property, which Image API 2 cannot express. A
-  forwarded '--iiif-version V2' is rejected.
-
-cert options (throwaway C2PA test chain, EC P-256 CA + end-entity):
   --out-dir DIR        Output directory (default: ./certs)
   --cn NAME            Common name (default: $CERT_CN)
   --org NAME           Organization O attribute (default: $CERT_ORG)
   --days N             Validity in days (default: $CERT_DAYS)
   --force              Replace existing key/cert files in the output dir
-Requires openssl (or LibreSSL) for 'cert' and 'c2pa' chain creation;
-override with OPENSSL_BIN=/path/to/openssl
+  --help               Show this help
+
+Requires openssl (or LibreSSL); override with OPENSSL_BIN=/path/to/openssl
 HELP
 }
 
@@ -247,7 +266,7 @@ do_cert() {
                 shift
                 ;;
             -h|--help)
-                usage
+                usage_cert
                 exit 0
                 ;;
             *)
@@ -391,20 +410,23 @@ Options:
   --out-dir DIR        Chain directory (default: ./certs)
   --force              Regenerate the chain even if it already exists
   --create-ca          Accepted explicitly; the chain is always ensured
+  --help               Show this help
 
 Everything else is forwarded to generate, e.g.:
 
   bin/fliiifenleger c2pa -o ./signed-iiif /path/to/image.jpg
 
-A forwarded '--sink' or cert=/key=/alg= sink option is rejected — the
-command manages the chain itself; use plain 'generate --sink c2pa' for
-full control (without cert/key it signs with an ephemeral certificate).
-The command always generates IIIF Image API 3 output ('--iiif-version V3'
-is injected unless given): custom-CA signing needs the namespaced
-'c2pa:trustAnchor' property, which Image API 2 cannot express. A
-forwarded '--iiif-version V2' is rejected. Advertise the chain with
-'--sink-opt trust-anchor=<absolute URI>' so clients can verify the tiles.
-Validate the result against the chain:
+The chain is auto-created when missing, reused with a warning when
+present, and an incomplete chain aborts until it is regenerated with
+'--force'. A forwarded '--sink' or cert=/key=/alg= sink option is
+rejected — the command manages the chain itself; use plain
+'generate --sink c2pa' for full control (without cert/key it signs with
+an ephemeral certificate). The command always generates IIIF Image API 3
+output ('--iiif-version V3' is injected unless given): custom-CA signing
+needs the namespaced 'c2pa:trustAnchor' property, which Image API 2
+cannot express. A forwarded '--iiif-version V2' is rejected. Advertise
+the chain with '--sink-opt trust-anchor=<absolute URI>' so clients can
+verify the tiles. Validate the result against the chain:
 
   bin/fliiifenleger validate --check-c2pa --trust-anchor $CERT_DIR/chain.pem \\
     -o reassembled.jpg <info.json-url>
@@ -455,7 +477,7 @@ do_sink_generate() {
     while [ "$#" -gt 0 ]; do
         case "$1" in
             -h|--help)
-                usage
+                usage_sink "$sink"
                 exit 0
                 ;;
             --)
@@ -527,7 +549,7 @@ do_c2pa() {
                 shift
                 ;;
             -h|--help)
-                usage
+                usage_c2pa
                 exit 0
                 ;;
             --)
@@ -601,6 +623,46 @@ maybe_build() {
     "$MVN" -f "$APP_ROOT/pom.xml" package -DskipTests $rust_flags
 }
 
+do_init() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --rebuild)
+                REBUILD=1
+                shift
+                ;;
+            -h|--help)
+                usage_init
+                exit 0
+                ;;
+            *)
+                die "unknown init option: $1 (try --help)"
+                ;;
+        esac
+    done
+
+    echo "[fliiifenleger] init: checking the environment ..."
+    find_java || true
+    find_cargo || true
+    if openssl_bin=$(find_openssl 2>/dev/null); then
+        echo "[fliiifenleger] openssl found: $openssl_bin (needed only by 'cert'/'c2pa')"
+    else
+        warn "openssl not found; it is only needed when 'cert' or 'c2pa' have to create the test chain (OPENSSL_BIN=/path/to/openssl to override)"
+    fi
+    if command -v mvn >/dev/null 2>&1; then
+        MVN=$(command -v mvn)
+        echo "[fliiifenleger] maven found on PATH: $MVN"
+    else
+        warn "mvn not found on PATH; downloading Apache Maven $MAVEN_VERSION ..."
+        MVN=$(download_and_install_maven)
+    fi
+    maybe_build
+    if [ -f "$CLI_JAR" ]; then
+        echo "[fliiifenleger] init done: CLI jar ready at $CLI_JAR"
+    else
+        warn "no CLI jar at $CLI_JAR; check the build output above"
+    fi
+}
+
 run_cli() {
     if command -v java >/dev/null 2>&1; then
         java_bin="java"
@@ -627,6 +689,11 @@ main_with_cli_args() {
 }
 
 case "${1:-}" in
+    init)
+        shift
+        do_init "$@"
+        exit 0
+        ;;
     cert)
         shift
         do_cert "$@"

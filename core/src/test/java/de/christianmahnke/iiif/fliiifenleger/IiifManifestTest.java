@@ -42,12 +42,28 @@ class IiifManifestTest {
 
         JsonNode json = manifest.toJson();
 
-        assertEquals("https://www.w3.org/ns/iiif/presentation/3/context.json", json.get("@context").asString());
+        assertEquals(IiifManifest.V3_CONTEXT, json.get("@context").asString());
         assertEquals("Manifest", json.get("type").asString());
         assertEquals(BASE_URI, json.get("id").asString());
-        assertEquals("Test Manifest V3", json.get("label").asString());
+        assertEquals("Test Manifest V3", IiifManifest.textFromNode(json.get("label")));
         assertEquals(1, json.get("items").size());
         assertEquals("Canvas", json.get("items").get(0).get("type").asString());
+    }
+
+    @Test
+    void testV4ManifestStructure() throws Exception {
+        IiifManifest manifest = new IiifManifest(ImageInfo.IIIFVersion.V4, BASE_URI, "Test Manifest V4");
+        manifest.addCanvas("canvas1", "Canvas 1", "http://example.org/iiif/info1", 1024, 768);
+
+        JsonNode json = manifest.toJson();
+
+        assertEquals(IiifManifest.V4_CONTEXT, json.get("@context").asString());
+        assertEquals("Manifest", json.get("type").asString());
+        assertEquals("Test Manifest V4", IiifManifest.textFromNode(json.get("label")));
+        JsonNode canvasNode = json.get("items").get(0);
+        JsonNode annotation = canvasNode.get("items").get(0).get("items").get(0);
+        assertEquals("Annotation", annotation.get("type").asString());
+        assertEquals("http://example.org/iiif/info1", annotation.get("body").get("id").asString());
     }
 
     @Test
@@ -70,7 +86,9 @@ class IiifManifestTest {
         JsonNode json = manifest.toJson();
         JsonNode canvasNode = json.get("items").get(0);
         assertEquals("Canvas", canvasNode.get("type").asString());
-        assertEquals(BASE_URI + "/info.json", canvasNode.get("items").get(0).get("id").asString());
+        JsonNode annotation = canvasNode.get("items").get(0).get("items").get(0);
+        assertEquals("Annotation", annotation.get("type").asString());
+        assertEquals(BASE_URI + "/info.json", annotation.get("body").get("id").asString());
     }
 
     @Test

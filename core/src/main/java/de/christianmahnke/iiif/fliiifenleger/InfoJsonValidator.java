@@ -116,6 +116,10 @@ public final class InfoJsonValidator {
             return new ValidationResult(false, errors, null);
         }
         ImageInfo.IIIFVersion effective = expected != null ? expected : detected;
+        if (effective == ImageInfo.IIIFVersion.V4) {
+            return new ValidationResult(false, List.of(
+                    "IIIF Presentation API 4 has no Image API info.json schema; use V2 or V3."), detected);
+        }
         if (expected != null && expected != detected) {
             errors.add("Version mismatch: document looks like Image API " + detected.getShortName()
                     + " but " + expected.getShortName() + " was expected");
@@ -203,6 +207,10 @@ public final class InfoJsonValidator {
     }
 
     protected static Schema schemaFor(ImageInfo.IIIFVersion version) {
+        if (version == ImageInfo.IIIFVersion.V4) {
+            throw new IllegalArgumentException(
+                    "IIIF Presentation API 4 has no Image API info.json schema.");
+        }
         return version == ImageInfo.IIIFVersion.V3 ? V3_SCHEMA : V2_SCHEMA;
     }
 

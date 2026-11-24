@@ -128,7 +128,7 @@ public class Tiler {
      * @param imageInfo The image info used to generate tiles.
      * @param outputDir The output directory where the manifest.json will be written.
      * @param baseUri   The base URI for the manifest.
-     * @param version   The IIIF Presentation API version (V2 or V3).
+     * @param version   The IIIF Presentation API version (V2, V3 or V4).
      * @return The path to the generated manifest.json.
      * @throws Exception if the manifest cannot be generated or written.
      */
@@ -228,6 +228,10 @@ public class Tiler {
             TileSink sink
     ) throws Exception {
         ImageInfo.IIIFVersion version = imageInfo.getVersion();
+        if (version == ImageInfo.IIIFVersion.V4) {
+            throw new IllegalArgumentException(
+                    "IIIF Presentation API 4 has no Image API tiles; use V2 or V3 for tile generation.");
+        }
         TileSink.InfoExtension extension = sink == null
                 ? TileSink.InfoExtension.empty()
                 : sink.getInfoJsonExtension(version);
