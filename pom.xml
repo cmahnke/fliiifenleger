@@ -24,10 +24,10 @@
             GraalWasm dependencies (cli/pom.xml).  Keep in sync with the
             graalvm.version property in wasm-runtime/pom.xml.
         -->
-        <graalvm.version>25.4.4.1.1</graalvm.version>
+        <graalvm.version>25.5.5.0.3</graalvm.version>
         <auto-service.version>1.1.1</auto-service.version>
         <lombok.version>1.18.48</lombok.version>
-        <jackson.version>3.2.4</jackson.version>
+        <jackson.version>3.3.0</jackson.version>
         <!-- Silences JEP 471 sun.misc.Unsafe warnings from Lombok's annotation
              processor in forked test JVMs (the Maven JVM itself is covered by
              .mvn/jvm.config). Only exists on JDK 23+, hence requireJavaVersion. -->
@@ -112,7 +112,7 @@
             <dependency>
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
-                <version>3.0.8</version>
+                <version>3.0.9</version>
             </dependency>
 
             <!-- Image IO -->
@@ -136,7 +136,7 @@
             <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
-                <version>1.6.5</version>
+                <version>1.6.8</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
